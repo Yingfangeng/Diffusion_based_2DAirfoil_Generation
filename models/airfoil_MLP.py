@@ -14,7 +14,7 @@ from torchvision.utils import make_grid
 from torchvision.transforms import ToTensor
 
 
-from .mlp import CFGResNet
+from models.mlp import CFGResNet
 from einops import repeat
 
 def seed_everything(seed):
