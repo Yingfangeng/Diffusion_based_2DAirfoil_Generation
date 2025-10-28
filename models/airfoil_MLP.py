@@ -18,6 +18,7 @@ from models.mlp import CFGResNet
 from einops import repeat
 
 def seed_everything(seed):
+    # This is to fix the random seeds to be able to reproduce the training process
     os.environ['PYTHONHASHSEED'] = str(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -27,10 +28,10 @@ def seed_everything(seed):
 
 class EulerMaruyama(nn.Module):
     def __init__(self, 
-                 num_time_steps=500, 
-                 eps=1e-7,
-                 resample=1,
-                 intermediate_steps=100000):
+                 num_time_steps=500, # how many steps needed from pure noise to clean signal
+                 eps=1e-7,           # a small timestep added to avoid literally starting from zero to increase stability
+                 resample=1,         # a criteria used latter on
+                 intermediate_steps=100000):# intermediate steps to store visualisation
         super().__init__()
 
         self.num_time_steps = num_time_steps
@@ -40,15 +41,17 @@ class EulerMaruyama(nn.Module):
 
     @torch.no_grad()
     def predictor_step(self, x, c, t, context_mask, step_size, unet, sde, device, **kwargs):
-        mean_x = x - (sde.f(x, t) - sde.g(t)**2*unet(x, c, t, context_mask, **kwargs))*step_size
-        x = mean_x + torch.sqrt(step_size)*sde.g(t)*torch.randn_like(x)
+        # One reverse diffusion step, from a noisy signal to a slightly cleaner signal
+        mean_x = x - (sde.f(x, t) - sde.g(t)**2*unet(x, c, t, context_mask, **kwargs))*step_size # This is the predicted next step x
+        x = mean_x + torch.sqrt(step_size)*sde.g(t)*torch.randn_like(x) # Add noise to get the next noisy step
         return x, mean_x
 
     @torch.no_grad()
     def forward(self, unet, sde, data_size, device, c=None, return_intermediates=False, **kwargs):
+        # The forward (reverse) diffusion process, starting from a pure noise, calling the predictor_step function iterativly until it gives a pure signal
         batch_size = data_size[0]
-        noise = sde.sample_prior(data_size, device=device)
-        time_steps = torch.linspace(1., self.eps, self.num_time_steps, device=device)
+        noise = sde.sample_prior(data_size, device=device) # create Gaussian noise in shape of the data
+        time_steps = torch.linspace(1., self.eps, self.num_time_steps, device=device) # greates time grid
         step_size = time_steps[0]-time_steps[1]
 
         if c is None:
@@ -60,9 +63,10 @@ class EulerMaruyama(nn.Module):
         x = noise + 0.
         intermediates = []
         i = 1
-        for time_step in tqdm(time_steps, desc="Sampling", unit="iteration"):
+        for time_step in tqdm(time_steps, desc="Sampling", unit="iteration"): # tqdm is used to generate a process bar
             batch_time_step = torch.ones(batch_size, device=device) * time_step
             x, mean_x = self.predictor_step(x, c, batch_time_step, context_mask, step_size, unet, sde, device, **kwargs)
+            # whether store an itermediates step
             if i % self.intermediate_steps == 0:
                 intermediates.append(x)
             i += 1
@@ -72,6 +76,7 @@ class EulerMaruyama(nn.Module):
 
     @torch.no_grad()
     def inpaint(self, unet, sde, data_size, values, inds, device):
+        # inpaint is to enforce some known values to be fixed (which are set to be the ground truth), and these data will not be denoised. 
         # if sensor values exist
         if len(inds) > 0:
             # sample with inpainting
@@ -118,7 +123,7 @@ class EulerMaruyama(nn.Module):
 
             return mean_x
 
-        else:
+        else: # if no fixed points then it is not 
             mean_x, _ = self.forward(unet, sde, data_size, device)
             return mean_x
 
