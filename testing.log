@@ -1,0 +1,11 @@
+cuda
+PyTorch version: 2.3.1
+CUDA available: True
+CUDA version: 12.1
+GPU device count: 1
+Current device: 0
+Device name: NVIDIA L40S
+Matrix multiplication successful on GPU!
+tensor([[0.5924, 0.3460, 0.5144],
+        [0.8915, 0.5459, 0.4091],
+        [0.4421, 0.2583, 0.3739]], device='cuda:0')
