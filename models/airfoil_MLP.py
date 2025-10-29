@@ -123,11 +123,12 @@ class EulerMaruyama(nn.Module):
 
             return mean_x
 
-        else: # if no fixed points then it is not 
+        else: # if no fixed points then roll back to the default mode
             mean_x, _ = self.forward(unet, sde, data_size, device)
             return mean_x
 
 class ProbabilityFlowODE(EulerMaruyama):
+    # Use prabability flow ODE to replace SDE? 
     def __init__(self,
                  num_time_steps=500, 
                  eps=1e-7,
@@ -142,15 +143,17 @@ class ProbabilityFlowODE(EulerMaruyama):
         return x, mean_x
 
 class EDMLoss:
-    # 1D EDM Loss
+    # 1D EDM Loss. Add a random noise level to the clean signal and ask the network to predict the clean signal. Calculate the weighted MSE as the loss function. s
     def __init__(self, P_mean=-1.2, P_std=1.2, sigma_data=0.5):
         self.P_mean = P_mean
         self.P_std = P_std
         self.sigma_data = sigma_data
 
     def __call__(self, net, images, labels=None):
-        rnd_normal = torch.randn([images.shape[0], 1], device=images.device)
-        sigma = (rnd_normal * self.P_std + self.P_mean).exp()
+        # image is the clean signal, PCA (principle component analysis) codes
+        # execute the EDM loss
+        rnd_normal = torch.randn([images.shape[0], 1], device=images.device) 
+        sigma = (rnd_normal * self.P_std + self.P_mean).exp() # generate the random nosie
         weight = (sigma ** 2 + self.sigma_data ** 2) / (sigma * self.sigma_data) ** 2
         y = images
         n = torch.randn_like(y) * sigma
@@ -162,19 +165,21 @@ def edm_sampler(
     net, latents, class_labels=None, randn_like=torch.randn_like,
     num_steps=18, sigma_min=0.002, sigma_max=80, rho=7,
     S_churn=0, S_min=0, S_max=float('inf'), S_noise=0,
-    deterministic=False
-):
+    deterministic=False # if true then the results will be fully reproducable given the same seeds
+):  # rho is a hyperparam that can be used to tune the amount of noise added per step
 
     # Adjust noise levels based on what's supported by the network.
+    # Clip to the range that the network is trained on such that it can be used to predict the noise level
     sigma_min = max(sigma_min, net.sigma_min)
     sigma_max = min(sigma_max, net.sigma_max)
 
-    # Time step discretization.
+    # Time step discretization. T_steps calculates the noisy levels that is going to be added to each step. It takes the value of a non-uniform noise distribution. 
     step_indices = torch.arange(num_steps, dtype=torch.float64, device=latents.device)
     t_steps = (sigma_max ** (1 / rho) + step_indices / (num_steps - 1) * (
                 sigma_min ** (1 / rho) - sigma_max ** (1 / rho))) ** rho
-    t_steps = torch.cat([net.round_sigma(t_steps), torch.zeros_like(t_steps[:1])])  # t_N = 0
+    t_steps = torch.cat([net.round_sigma(t_steps), torch.zeros_like(t_steps[:1])])  # Ensure the final step is always t_N = 0
 
+    # The first step
     x_next = latents.to(torch.float64) * t_steps[0]
 
     whole_trajectory = torch.zeros((num_steps, *x_next.shape), dtype=torch.float64)
@@ -188,8 +193,8 @@ def edm_sampler(
             t_hat = net.round_sigma(t_cur + gamma * t_cur)
             x_hat = x_cur + (t_hat ** 2 - t_cur ** 2).sqrt() * S_noise * randn_like(x_cur)
         else:
-            t_hat = t_cur
-            x_hat = x_cur
+            t_hat = t_cur # the noise we added at this particular step
+            x_hat = x_cur # the noisy signal that is to be denoised
         # Euler step.
         denoised = net(x_hat, repeat(t_hat.reshape(-1), 'w -> h w', h=x_hat.shape[0]), class_labels).to(torch.float64)
         d_cur = (x_hat - denoised) / t_hat
@@ -201,7 +206,7 @@ def edm_sampler(
             d_prime = (x_next - denoised) / t_next
             x_next = x_hat + (t_next - t_hat) * (0.5 * d_cur + 0.5 * d_prime)
 
-        whole_trajectory[i] = x_next
+        whole_trajectory[i] = x_next # record the entire denoisy steps
 
     return x_next, whole_trajectory
 
@@ -222,7 +227,7 @@ class EDM_CFG(torch.nn.Module):
         model_type      = 'CFGResNet',   # Class name of the underlying model.
         **model_kwargs,                     # Keyword arguments for the underlying model.
     ):
-        super().__init__()
+        super().__init__()  # pass all the objects from the torch.nn.Module to this class
         self.in_dim = in_dim
         self.out_dim = out_dim
         self.label_dim = cond_size
@@ -265,10 +270,10 @@ class StackedRandomGenerator:
         self.device = device
 
     def randn(self, size, **kwargs):
-        assert size[0] == len(self.generators)
+        assert size[0] == len(self.generators) # assert is a checker that assess whether the two variable dimensinos are matched
         return torch.stack([torch.randn(size[1:], generator=gen, **kwargs) for gen in self.generators])
 
-    def randn_like(self, input):
+    def randn_like(self, input): # generate the random number in the same shape (dimension) as the input tensor
         return self.randn(input.shape, dtype=input.dtype, layout=input.layout, device=input.device)
 
     def randint(self, *args, size, **kwargs):
@@ -278,10 +283,10 @@ class StackedRandomGenerator:
 # Dataset Class
 class Airfoil1D_Dataset(Dataset):
     def __init__(self, unique_y_coords, y_coord_mapping, processed_cond_data, index_to_name_mapping):
-        self.unique_y_coords = unique_y_coords
-        self.y_coord_mapping = y_coord_mapping
-        self.processed_cond_data = processed_cond_data
-        self.index_to_name_mapping = index_to_name_mapping
+        self.unique_y_coords = unique_y_coords # the reduced representation after pca, stored as .pkl file
+        self.y_coord_mapping = y_coord_mapping # the dictionary that maps the aerofoil name to the coordiante
+        self.processed_cond_data = processed_cond_data # 
+        self.index_to_name_mapping = index_to_name_mapping 
     
     def __len__(self):
         return len(self.processed_cond_data)
@@ -292,9 +297,11 @@ class Airfoil1D_Dataset(Dataset):
         y_coord = self.unique_y_coords[y_coord_idx]
         cond_data = self.processed_cond_data[idx]
 
+        # returns the clean aerofoil shape for a given noise level and a condition info
         return torch.tensor(y_coord, dtype=torch.float32), torch.tensor(cond_data, dtype=torch.float32)
 
 class VP_1D(nn.Module):
+    # This is the SDE stuff, not used in the EDM mode which uses PF ODE
     def __init__(self, 
                  beta_min=1e-4, 
                  beta_max=1.0):
@@ -343,7 +350,7 @@ class VP_1D(nn.Module):
         return logps
 
 def p_losses_cond(score_model, sde, x0, c, **kwargs):
-    # compute losses (including ELBO, score-matching loss)
+    # compute losses (including ELBO, score-matching loss). This is not used in the EDM mode as EDM uses EDMLoss instead
     t = torch.rand(x0.shape[0], device=x0.device) * (1. - 1e-5) + 1e-5
     x_perturbed, std, z = sde.forward(x0, t)
     context_mask = torch.zeros_like(c)
@@ -370,7 +377,7 @@ def p_losses_cond(score_model, sde, x0, c, **kwargs):
     return loss, loss_dict
 
 def plot_to_tensor(fig):
-    """Convert a Matplotlib figure to a 3D tensor for TensorBoard."""
+    """Convert a Matplotlib figure to a 3D tensor for TensorBoard. TensorBoard is a tool for visualising the training paramters and loss function curves."""
     # Save the plot to a PNG in memory
     buf = io.BytesIO()
     plt.savefig(buf, format='png')
@@ -383,45 +390,55 @@ def plot_to_tensor(fig):
     # Convert PIL image to tensor
     return ToTensor()(pil_img)
 
+
+
+
+#=============== The Main Function ================
+
+
+
+
 if __name__ == '__main__':
     # Load data from disk
-    with open('./pickle_files/unique_y_coords.pkl', 'rb') as f:
+    with open('./pickle_files/unique_y_coords.pkl', 'rb') as f: # The actual dimensional coordiantes before pca. It contains all the aerofoil shapes. 
         unique_y_coords = pickle.load(f)
 
-    with open('./pickle_files/y_coord_mapping.pkl', 'rb') as f:
+    with open('./pickle_files/y_coord_mapping.pkl', 'rb') as f: # Maps the aerofoil names onto the unique_y_coordinates.pkl file. Similar to csv heading
         y_coord_mapping = pickle.load(f)
 
-    with open('./pickle_files/index_to_name_mapping.pkl', 'rb') as f:
+    with open('./pickle_files/index_to_name_mapping.pkl', 'rb') as f: # Maps the aerofoil index to names, similar to csv row number
         index_to_name_mapping = pickle.load(f)
 
-    with open('./pickle_files/processed_cond_data.pkl', 'rb') as f:
+    with open('./pickle_files/processed_cond_data.pkl', 'rb') as f: # conditional data, 
         processed_cond_data = pickle.load(f)
 
     with open('./pickle_files/minmax_scaler.pkl', 'rb') as f:
         minmax_scaler = pickle.load(f)
 
-    with open('./pickle_files/pca.pkl', 'rb') as f:
+    with open('./pickle_files/pca.pkl', 'rb') as f: # the reduced parametrisation after pca
         pca = pickle.load(f)
 
-    seed_everything(0)
+    seed_everything(0) # ensure seed is the same such that the random process gives the same result. This ensures training process is exactly reproducable. 
 
     #dataset = Airfoil2D_Dataset(airfoil_df, airfoil_coord_df)
-    unique_y_coords = pca.transform(np.asarray(unique_y_coords).reshape(-1, 200))
-    dataset = Airfoil1D_Dataset(unique_y_coords, y_coord_mapping, processed_cond_data, index_to_name_mapping)
-    generator = torch.Generator().manual_seed(0)
-    train_set, val_set = torch.utils.data.random_split(dataset, [0.8,0.2], generator=generator)
+    unique_y_coords = pca.transform(np.asarray(unique_y_coords).reshape(-1, 200)) # convert original dimensional coordiantes to reduced parametrization using pca
+    dataset = Airfoil1D_Dataset(unique_y_coords, y_coord_mapping, processed_cond_data, index_to_name_mapping) # Load all the data and labels into the object
 
-    # optimization
-    learning_rate = 1E-4
-    num_epochs = 500
-    num_components = 6
+    generator = torch.Generator().manual_seed(0)
+    train_set, val_set = torch.utils.data.random_split(dataset, [0.8,0.2], generator=generator) # split the training and validation sets randomly
+
+    # hyperparameter settings
+    learning_rate = 1E-4 # the step taken during gradient descent
+    num_epochs = 500 
+    num_components = 6 # pca dimension is 6 
 
     beta_min = 1e-4 # for SDE noise [VP]
     beta_max = 1 # for SDE noise [VP]
     cond_scale =1
     rescaled_phi = 0
 
-    device='cuda'
+    device='cuda' # device
+    # variables tracking for analysis or visualisation. Not used in the current script.
     last_loss_values = []
     fid_values = []
     avg_nll_values = []
@@ -431,8 +448,9 @@ if __name__ == '__main__':
 
     Training = True
     method = 'EDM' # 'EDM' or 'CFG'
-    save_path = './mdl_weight/edm.pth' 
+    save_path = './mdl_weight/edm.pth' # store the trained model weights
 
+    # load the data set
     batch_size = 128
     train_loader = torch.utils.data.DataLoader(
         train_set, batch_size=batch_size, shuffle=True
@@ -441,7 +459,7 @@ if __name__ == '__main__':
         val_set, batch_size=batch_size, shuffle=True
     )
 
-
+    # The SDE noise, only used if model is CFG
     vp = VP_1D(beta_min, beta_max)
 
     if method == 'CFG':
@@ -478,10 +496,12 @@ if __name__ == '__main__':
                 lr=learning_rate,
             )
         '''
-        optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+
+        optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate) # use AdamW to improve weight regularisation
         scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2, eta_min=1e-6, last_epoch=-1)
         scheduler_iters = len(train_loader)
 
+        # intiailise tracking variables
         global_step = 0
         frames = []
         loss_v = []
@@ -489,7 +509,7 @@ if __name__ == '__main__':
         #val_loss_avg = []
         best_val_loss = float('inf')
         print('training ...')
-        for epoch in trange(num_epochs):
+        for epoch in trange(num_epochs): # use trange to create a process bar with tqdm
             model.train()
             train_loss = 0.
             num_items = 0
@@ -505,10 +525,12 @@ if __name__ == '__main__':
                     tmp_loss = loss_fn(model, x, c)
                     loss = tmp_loss.sum().mul(1/x.shape[0])
                 
+                # Compute gradients, update model weights and progress learning rates
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
                 scheduler.step(epoch + step / scheduler_iters)
+                # Store the training loss
                 train_loss += loss.item() * x.shape[0]
                 num_items += x.shape[0]
                 loss_v.append(loss.item())
@@ -541,6 +563,8 @@ if __name__ == '__main__':
             writer.add_scalar('Loss/train', train_loss / num_items, epoch)
             writer.add_scalar('Loss/validation', val_loss, epoch)
             writer.add_scalar('Learning Rate', optimizer.param_groups[0]['lr'], epoch)
+            
+            # Visualise the training outcome every 10 epochs
             if (epoch+1) % data_log_interval == 0:
                 #if epoch >= 19:
                 #    torch.save(model.state_dict(), 'mdl_weight/reduced/reduced_epoch_{}.pth'.format(epoch))
