@@ -422,6 +422,7 @@ if __name__ == '__main__':
 
     #dataset = Airfoil2D_Dataset(airfoil_df, airfoil_coord_df)
     unique_y_coords = pca.transform(np.asarray(unique_y_coords).reshape(-1, 200)) # convert original dimensional coordiantes to reduced parametrization using pca
+    print('unique_y_coord', )
     dataset = Airfoil1D_Dataset(unique_y_coords, y_coord_mapping, processed_cond_data, index_to_name_mapping) # Load all the data and labels into the object
 
     generator = torch.Generator().manual_seed(0)
