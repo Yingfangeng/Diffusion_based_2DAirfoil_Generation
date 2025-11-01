@@ -12,7 +12,8 @@ from torch.utils.data import Dataset
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import make_grid
 from torchvision.transforms import ToTensor
-
+import pandas as pd
+from sklearn.decomposition import PCA
 
 from models.mlp import CFGResNet
 from einops import repeat
@@ -282,23 +283,19 @@ class StackedRandomGenerator:
 
 # Dataset Class
 class Airfoil1D_Dataset(Dataset):
-    def __init__(self, unique_y_coords, y_coord_mapping, processed_cond_data, index_to_name_mapping):
-        self.unique_y_coords = unique_y_coords # the reduced representation after pca, stored as .pkl file
-        self.y_coord_mapping = y_coord_mapping # the dictionary that maps the aerofoil name to the coordiante
-        self.processed_cond_data = processed_cond_data # 
-        self.index_to_name_mapping = index_to_name_mapping 
+    def __init__(self, coordinates, cond_data):
+        self.coordinates = coordinates # the reduced representation after pca, stored as .pkl file
+        self.cond_data = cond_data
     
     def __len__(self):
-        return len(self.processed_cond_data)
+        return len(self.cond_data)
 
     def __getitem__(self, idx):
-        af_name = self.index_to_name_mapping[idx]
-        y_coord_idx = self.y_coord_mapping[af_name]
-        y_coord = self.unique_y_coords[y_coord_idx]
-        cond_data = self.processed_cond_data[idx]
+        coordinates = self.coordinates[idx]
+        cond_data = self.cond_data[idx]
 
         # returns the clean aerofoil shape for a given noise level and a condition info
-        return torch.tensor(y_coord, dtype=torch.float32), torch.tensor(cond_data, dtype=torch.float32)
+        return torch.tensor(coordinates, dtype=torch.float32), torch.tensor(cond_data, dtype=torch.float32)
 
 class VP_1D(nn.Module):
     # This is the SDE stuff, not used in the EDM mode which uses PF ODE
@@ -399,31 +396,33 @@ def plot_to_tensor(fig):
 
 
 if __name__ == '__main__':
-    # Load data from disk
-    with open('./pickle_files/unique_y_coords.pkl', 'rb') as f: # The actual dimensional coordiantes before pca. It contains all the aerofoil shapes. 
-        unique_y_coords = pickle.load(f)
 
-    with open('./pickle_files/y_coord_mapping.pkl', 'rb') as f: # Maps the aerofoil names onto the unique_y_coordinates.pkl file. Similar to csv heading
-        y_coord_mapping = pickle.load(f)
+    df = pd.read_csv("aerofoil_data_normalized.csv")
+    
+    combined_coordinates = []
+    cond_data = []
+    for _, row in df.iterrows():
+        x_coords = np.fromstring(row["x"].strip("[]"), sep=" ")
+        y_coords = np.fromstring(row["y"].strip("[]"), sep=" ")
+        paired = np.column_stack((x_coords, y_coords)).flatten()
+        combined_coordinates.append(paired)
+    coordinates = np.array(combined_coordinates)
 
-    with open('./pickle_files/index_to_name_mapping.pkl', 'rb') as f: # Maps the aerofoil index to names, similar to csv row number
-        index_to_name_mapping = pickle.load(f)
+    name = df['name'].to_numpy()
+    Ma = df['Ma'].to_numpy()
+    Re = df['Re'].to_numpy()
+    CL = df['CL'].to_numpy()
+    CD = df['CD'].to_numpy()
+    for i in range(len(name)):
+        cond_data.append([Ma[i], Re[i], CL[i], CD[i]])
 
-    with open('./pickle_files/processed_cond_data.pkl', 'rb') as f: # conditional data, 
-        processed_cond_data = pickle.load(f)
-
-    with open('./pickle_files/minmax_scaler.pkl', 'rb') as f:
-        minmax_scaler = pickle.load(f)
-
-    with open('./pickle_files/pca.pkl', 'rb') as f: # the reduced parametrisation after pca
-        pca = pickle.load(f)
-
+    pca = PCA(n_components=20)
+    
     seed_everything(0) # ensure seed is the same such that the random process gives the same result. This ensures training process is exactly reproducable. 
+    
+    coordinates = pca.fit_transform(coordinates)
 
-    #dataset = Airfoil2D_Dataset(airfoil_df, airfoil_coord_df)
-    unique_y_coords = pca.transform(np.asarray(unique_y_coords).reshape(-1, 200)) # convert original dimensional coordiantes to reduced parametrization using pca
-    print('unique_y_coord', )
-    dataset = Airfoil1D_Dataset(unique_y_coords, y_coord_mapping, processed_cond_data, index_to_name_mapping) # Load all the data and labels into the object
+    dataset = Airfoil1D_Dataset(coordinates, cond_data)
 
     generator = torch.Generator().manual_seed(0)
     train_set, val_set = torch.utils.data.random_split(dataset, [0.8,0.2], generator=generator) # split the training and validation sets randomly
@@ -431,14 +430,14 @@ if __name__ == '__main__':
     # hyperparameter settings
     learning_rate = 1E-4 # the step taken during gradient descent
     num_epochs = 500 
-    num_components = 6 # pca dimension is 6 
+    num_components = 20 # pca dimension
 
     beta_min = 1e-4 # for SDE noise [VP]
     beta_max = 1 # for SDE noise [VP]
     cond_scale =1
     rescaled_phi = 0
 
-    device='cuda' # device
+    device='cpu' # cpu or cuda
     # variables tracking for analysis or visualisation. Not used in the current script.
     last_loss_values = []
     fid_values = []

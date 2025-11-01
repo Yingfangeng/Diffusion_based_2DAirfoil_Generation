@@ -4,3 +4,4 @@ __pycache__/
 *.pyd
 *.so
 *.DS_Store
+*.csv
