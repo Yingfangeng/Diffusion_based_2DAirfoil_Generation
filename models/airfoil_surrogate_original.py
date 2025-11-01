@@ -6,8 +6,6 @@ import matplotlib.pyplot as plt
 import torch
 from torch import nn
 from torch.utils.data import Dataset
-from sklearn.decomposition import PCA
-import pandas as pd
 
 class Affine(nn.Module):
     #https://github.com/facebookresearch/deit/blob/263a3fcafc2bf17885a4af62e6030552f346dc71/resmlp_models.py#L16C9-L16C9
@@ -88,20 +86,24 @@ class ResNet(torch.nn.Module):
 
 # Dataset Class
 class Airfoil_surrogate_Dataset(Dataset):
-    def __init__(self, coordinates, cond_data):
-        self.coordinates = coordinates # the reduced representation after pca, stored as .pkl file
-        self.cond_data = cond_data
+    def __init__(self, unique_y_coords, y_coord_mapping, processed_cond_data, index_to_name_mapping):
+        self.unique_y_coords = unique_y_coords
+        self.y_coord_mapping = y_coord_mapping
+        self.processed_cond_data = processed_cond_data
+        self.index_to_name_mapping = index_to_name_mapping
     
     def __len__(self):
-        return len(self.coordinates)
+        return len(self.processed_cond_data)
 
     def __getitem__(self, idx):
-        coordinates = self.coordinates[idx]
-        cond_data = self.cond_data[idx]
-        coordinates = torch.tensor(coordinates, dtype=torch.float32)
+        af_name = self.index_to_name_mapping[idx]
+        y_coord_idx = self.y_coord_mapping[af_name]
+        y_coord = self.unique_y_coords[y_coord_idx]
+        cond_data = self.processed_cond_data[idx]
+        y_coord = torch.tensor(y_coord, dtype=torch.float32)
         cond_data = torch.tensor(cond_data, dtype=torch.float32)
 
-        return torch.cat((coordinates, cond_data[2:])), cond_data[:2]
+        return torch.cat((y_coord, cond_data[2:])), cond_data[:2]
 
 def seed_everything(seed):
     os.environ['PYTHONHASHSEED'] = str(seed)
@@ -113,33 +115,29 @@ def seed_everything(seed):
 
 if __name__ == '__main__':
     # Load data from disk
-    df = pd.read_csv("aerofoil_data_normalized.csv")
-    
-    combined_coordinates = []
-    cond_data = []
-    for _, row in df.iterrows():
-        x_coords = np.fromstring(row["x"].strip("[]"), sep=" ")
-        y_coords = np.fromstring(row["y"].strip("[]"), sep=" ")
-        paired = np.column_stack((x_coords, y_coords)).flatten()
-        combined_coordinates.append(paired)
-    coordinates = np.array(combined_coordinates)
+    with open('./pickle_files/unique_y_coords.pkl', 'rb') as f:
+        unique_y_coords = pickle.load(f)
 
-    name = df['name'].to_numpy()
-    Ma = df['Ma'].to_numpy()
-    Re = df['Re'].to_numpy()
-    CL = df['CL'].to_numpy()
-    CD = df['CD'].to_numpy()
-    for i in range(len(name)):
-        cond_data.append([Ma[i], Re[i], CL[i], CD[i]])
-    
-    pca = PCA(n_components=20)
+    with open('./pickle_files/y_coord_mapping.pkl', 'rb') as f:
+        y_coord_mapping = pickle.load(f)
+
+    with open('./pickle_files/index_to_name_mapping.pkl', 'rb') as f:
+        index_to_name_mapping = pickle.load(f)
+
+    with open('./pickle_files/processed_cond_data.pkl', 'rb') as f:
+        processed_cond_data = pickle.load(f)
+
+    with open('./pickle_files/minmax_scaler.pkl', 'rb') as f:
+        minmax_scaler = pickle.load(f)
+
+    with open('./pickle_files/pca.pkl', 'rb') as f:
+        pca = pickle.load(f)
+
     seed_everything(0)
 
     #dataset = Airfoil2D_Dataset(airfoil_df, airfoil_coord_df)
-    oordinates = pca.fit_transform(coordinates)
-
-    dataset = Airfoil_surrogate_Dataset(coordinates, cond_data)
-
+    unique_y_coords = pca.transform(np.asarray(unique_y_coords).reshape(-1, 200))
+    dataset = Airfoil_surrogate_Dataset(unique_y_coords, y_coord_mapping, processed_cond_data, index_to_name_mapping)
     generator = torch.Generator().manual_seed(0)
     train_set, val_set = torch.utils.data.random_split(dataset, [0.8,0.2], generator=generator)
 

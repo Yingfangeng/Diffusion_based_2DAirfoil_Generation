@@ -437,7 +437,7 @@ if __name__ == '__main__':
     cond_scale =1
     rescaled_phi = 0
 
-    device='cpu' # cpu or cuda
+    device='cuda' # device
     # variables tracking for analysis or visualisation. Not used in the current script.
     last_loss_values = []
     fid_values = []
