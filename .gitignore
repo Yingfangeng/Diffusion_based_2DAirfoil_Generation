@@ -6,3 +6,6 @@ __pycache__/
 *.DS_Store
 *tensor_log_MLP*
 *.csv
+generated_data/*
+generated_geom/*
+*.bl

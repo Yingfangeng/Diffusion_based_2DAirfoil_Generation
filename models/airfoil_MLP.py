@@ -217,9 +217,9 @@ class EDM_CFG(torch.nn.Module):
         model_dim      = 128,      # dim multiplier.
         dim_mult        = [1,1,1,1],# dim multiplier for each resblock layer.
         dim_mult_emb    = 4,
-        num_blocks          = 4,        # Number of resblocks(mid) per level.
-        dropout             = 0.,      # Dropout rate.
-        emb_type            = "sinusoidal",# Timestep embedding type
+        num_blocks      = 4,        # Number of resblocks(mid) per level.
+        dropout         = 0.,      # Dropout rate.
+        emb_type        = "sinusoidal",# Timestep embedding type
         dim_mult_time  = 1,        # Time embedding size
         use_fp16        = False,            # Execute the underlying model at FP16 precision?
         sigma_min       = 0,                # Minimum supported noise level.
@@ -373,19 +373,19 @@ def p_losses_cond(score_model, sde, x0, c, **kwargs):
 
     return loss, loss_dict
 
-def plot_to_tensor(fig):
-    """Convert a Matplotlib figure to a 3D tensor for TensorBoard. TensorBoard is a tool for visualising the training paramters and loss function curves."""
-    # Save the plot to a PNG in memory
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png')
-    plt.close(fig)
-    buf.seek(0)
+# def plot_to_tensor(fig):
+#     """Convert a Matplotlib figure to a 3D tensor for TensorBoard. TensorBoard is a tool for visualising the training paramters and loss function curves."""
+#     # Save the plot to a PNG in memory
+#     buf = io.BytesIO()
+#     plt.savefig(buf, format='png')
+#     plt.close(fig)
+#     buf.seek(0)
     
-    # Convert PNG buffer to PIL image
-    pil_img = Image.open(buf)
+#     # Convert PNG buffer to PIL image
+#     pil_img = Image.open(buf)
     
-    # Convert PIL image to tensor
-    return ToTensor()(pil_img)
+#     # Convert PIL image to tensor
+#     return ToTensor()(pil_img)
 
 
 
@@ -397,8 +397,9 @@ def plot_to_tensor(fig):
 
 if __name__ == '__main__':
 
-    df = pd.read_csv("aerofoil_data_normalized.csv")
-    
+    df = pd.read_csv("aerofoil_data_normalised.csv")
+    data_structure = 'raw_coordinates'
+
     combined_coordinates = []
     cond_data = []
     for _, row in df.iterrows():
@@ -411,44 +412,55 @@ if __name__ == '__main__':
     name = df['name'].to_numpy()
     Ma = df['Ma'].to_numpy()
     Re = df['Re'].to_numpy()
+    AOA = df['AOA'].to_numpy()
     CL = df['CL'].to_numpy()
     CD = df['CD'].to_numpy()
     for i in range(len(name)):
-        cond_data.append([Ma[i], Re[i], CL[i], CD[i]])
+        cond_data.append([AOA[i], Ma[i], Re[i], CL[i], CD[i]])
 
-    pca = PCA(n_components=20)
-    
+
+    if data_structure == 'pca':
+        num_components = 20
+        pca = PCA(n_components=num_components)
+        coordinates = pca.fit_transform(coordinates)
+        print(f'Data structure is PCA with {num_components} PCs')
+
+    elif data_structure == 'raw_coordinates':
+        num_components = 600
+        print('Data structure is raw coordinates.')
+
     seed_everything(0) # ensure seed is the same such that the random process gives the same result. This ensures training process is exactly reproducable. 
     
-    coordinates = pca.fit_transform(coordinates)
-
+    
     dataset = Airfoil1D_Dataset(coordinates, cond_data)
 
     generator = torch.Generator().manual_seed(0)
-    train_set, val_set = torch.utils.data.random_split(dataset, [0.8,0.2], generator=generator) # split the training and validation sets randomly
+    # train_set, val_set = torch.utils.data.random_split(dataset, [0.8,0.2], generator=generator) # split the training and validation sets randomly
+    n = len(dataset)
+    n_train = int(0.8 * n)
+    train_set, val_set = torch.utils.data.random_split(dataset, [n_train, n - n_train], generator=generator)
+
 
     # hyperparameter settings
     learning_rate = 1E-4 # the step taken during gradient descent
-    num_epochs = 500 
-    num_components = 20 # pca dimension
+    num_epochs = 200
+    beta_min = 1e-4  # for SDE noise [VP]
+    beta_max = 1     # for SDE noise [VP]
+    cond_scale =1    # CFG guidance scale
+    rescaled_phi = 0 # mixing ratio of the std_function
 
-    beta_min = 1e-4 # for SDE noise [VP]
-    beta_max = 1 # for SDE noise [VP]
-    cond_scale =1
-    rescaled_phi = 0
-
-    device='cuda' # device
+    device='cuda'
     # variables tracking for analysis or visualisation. Not used in the current script.
-    last_loss_values = []
-    fid_values = []
-    avg_nll_values = []
-    KLD_arr = []
-    H_gen_arr = []
-    H_true_arr = []
+    # last_loss_values = []
+    # fid_values = []
+    # avg_nll_values = []
+    # KLD_arr = []
+    # H_gen_arr = []
+    # H_true_arr = []
 
     Training = True
     method = 'EDM' # 'EDM' or 'CFG'
-    save_path = './mdl_weight/edm.pth' # store the trained model weights
+    save_path = './mdl_weight/edm_raw_coords.pth' # store the trained model weights
 
     # load the data set
     batch_size = 128
@@ -464,14 +476,14 @@ if __name__ == '__main__':
 
     if method == 'CFG':
         print('Using CFG')
-        model = CFGResNet(num_components, num_components, cond_size=4, model_dim=128,
+        model = CFGResNet(num_components, num_components, cond_size=5, model_dim=128,
                         dim_mult=[1,2,2], dim_mult_emb=4, num_blocks=2,
                         dropout=0, emb_type="sinusoidal", dim_mult_time=1, 
                         dim_mult_cond=1, cond_drop_prob=0, adaptive_scale=True, skip_scale=1.0, affine=True)
     elif method == 'EDM':
         print('Using EDM')
-        model = EDM_CFG(num_components, num_components, cond_size=4, model_dim=128,
-                        dim_mult=[1,2,2], dim_mult_emb=4, num_blocks=2,
+        model = EDM_CFG(num_components, num_components, cond_size=5, model_dim=128,
+                        dim_mult=[1,2,2], dim_mult_emb=4, num_blocks=10,
                         dropout=0, emb_type="sinusoidal", dim_mult_time=1, 
                         dim_mult_cond=1, cond_drop_prob=0, adaptive_scale=True, skip_scale=1.0, affine=True)
         loss_fn = EDMLoss()
@@ -547,7 +559,7 @@ if __name__ == '__main__':
                     if method == 'CFG':
                         loss,_ = p_losses_cond(model, vp, x, c)
                     elif method == 'EDM':
-                        tmp_loss = loss_fn(model, x, c)
+                        tmp_loss = loss_fn(model, x_val, c_val)
                         loss = tmp_loss.sum().mul(1/x.shape[0])
                     val_loss += loss.item() * x_val.size(0)
 
@@ -593,42 +605,42 @@ if __name__ == '__main__':
                             train_samples, _ = edm_sampler(model, latents=train_latents, class_labels=train_cond, randn_like=rnd.randn_like)
                             val_samples, _ = edm_sampler(model, latents=val_latents, class_labels=val_cond, randn_like=rnd.randn_like)
 
-                    train_samples = pca.inverse_transform(train_samples[:].cpu().detach().numpy()).reshape(-1,2,100)
-                    val_samples = pca.inverse_transform(val_samples[:].cpu().detach().numpy()).reshape(-1,2,100)
-                    train_input = pca.inverse_transform(train_input[:].cpu().detach().numpy()).reshape(-1,2,100)
-                    val_input = pca.inverse_transform(val_input[:].cpu().detach().numpy()).reshape(-1,2,100)
+                    # train_samples = pca.inverse_transform(train_samples[:].cpu().detach().numpy()).reshape(-1,1,600)
+                    # val_samples = pca.inverse_transform(val_samples[:].cpu().detach().numpy()).reshape(-1,1,600)
+                    # train_input = pca.inverse_transform(train_input[:].cpu().detach().numpy()).reshape(-1,1,600)
+                    # val_input = pca.inverse_transform(val_input[:].cpu().detach().numpy()).reshape(-1,1,600)
 
-                    train_images = []
-                    for i in range(data_sample_size):
-                        plt.figure(figsize=(2, 2))
-                        plt.plot(train_input[i,0,:])
-                        plt.plot(train_input[i,1,:])
-                        plt.plot(train_samples[i,0,:])
-                        plt.plot(train_samples[i,1,:])
-                        plt.xticks([])
-                        fig = plt.gcf()
-                        train_images.append(plot_to_tensor(fig))
+                    # train_images = []
+                    # for i in range(data_sample_size):
+                    #     plt.figure(figsize=(2, 2))
+                    #     plt.plot(train_input[i,0,:])
+                    #     plt.plot(train_input[i,1,:])
+                    #     plt.plot(train_samples[i,0,:])
+                    #     plt.plot(train_samples[i,1,:])
+                    #     plt.xticks([])
+                    #     fig = plt.gcf()
+                    #     train_images.append(plot_to_tensor(fig))
 
                     # Combine images into a grid and log to TensorBoard
-                    train_grid = make_grid(train_images, nrow=grid_size)
-                    writer.add_image('Train_Samples_Grid', train_grid, epoch)
+                    # train_grid = make_grid(train_images, nrow=grid_size)
+                    # writer.add_image('Train_Samples_Grid', train_grid, epoch)
 
                     # Repeat the process for validation samples
-                    val_images = []
-                    for i in range(data_sample_size):
-                        plt.figure(figsize=(2, 2))
-                        plt.plot(val_input[i,0,:])
-                        plt.plot(val_input[i,1,:])
-                        plt.plot(val_samples[i,0,:])
-                        plt.plot(val_samples[i,1,:])
-                        plt.xticks([])
-                        fig = plt.gcf()
-                        val_images.append(plot_to_tensor(fig))
+        #             val_images = []
+        #             for i in range(data_sample_size):
+        #                 plt.figure(figsize=(2, 2))
+        #                 plt.plot(val_input[i,0,:])
+        #                 plt.plot(val_input[i,1,:])
+        #                 plt.plot(val_samples[i,0,:])
+        #                 plt.plot(val_samples[i,1,:])
+        #                 plt.xticks([])
+        #                 fig = plt.gcf()
+        #                 val_images.append(plot_to_tensor(fig))
 
-                    val_grid = make_grid(val_images, nrow=grid_size)
-                    writer.add_image('Validation_Samples_Grid', val_grid, epoch)
+        #             val_grid = make_grid(val_images, nrow=grid_size)
+        #             writer.add_image('Validation_Samples_Grid', val_grid, epoch)
 
-        writer.close()
+        # writer.close()
     else:
         model.load_state_dict(torch.load(save_path))
         model.to(device)

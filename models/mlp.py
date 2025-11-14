@@ -14,7 +14,7 @@ class Affine(nn.Module):
         self.beta = nn.Parameter(torch.zeros(dim))
 
     def forward(self, x):
-        return self.alpha * x + self.beta    
+        return self.alpha * x + self.beta
 
 class ResNetBlock(torch.nn.Module):
     def __init__(self, in_dim, out_dim, dropout=0,
@@ -131,11 +131,11 @@ class CFGResNet(torch.nn.Module):
     # https://github.com/lucidrains/denoising-diffusion-pytorch/blob/main/denoising_diffusion_pytorch/classifier_free_guidance.py
     def __init__(self, in_dim, out_dim, cond_size,
                 model_dim      = 128,      # dim multiplier.
-                dim_mult        = [1,1,1,1],# dim multiplier for each resblock layer.
-                dim_mult_emb    = 4,
-                num_blocks          = 4,        # Number of resblocks(mid) per level.
-                dropout             = 0.,      # Dropout rate.
-                emb_type            = "sinusoidal",# Timestep embedding type
+                dim_mult       = [1,1,1,1],# dim multiplier for each resblock layer.
+                dim_mult_emb   = 4,
+                num_blocks     = 4,        # Number of resblocks(mid) per level.
+                dropout        = 0.,      # Dropout rate.
+                emb_type       = "sinusoidal",# Timestep embedding type
                 dim_mult_time  = 1,        # Time embedding size
                 dim_mult_cond   = 1,        # Conditional embedding size
                 cond_drop_prob      = 0.0,      # Probability of using null emb
