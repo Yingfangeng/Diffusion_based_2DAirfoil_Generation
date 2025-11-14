@@ -37,4 +37,4 @@ if torch.cuda.is_available():
     print("Matrix multiplication successful on GPU!")
     print(z)
 else:
-    print("⚠️ CUDA not available — check your PyTorch or driver setup.")
+    print("CUDA not available — check your PyTorch or driver setup.")

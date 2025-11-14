@@ -2,10 +2,12 @@ __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
+*.npy
 *.so
-*.DS_Store
-*tensor_log_MLP*
 *.csv
+*.bl
+*.sh
 generated_data/*
 generated_geom/*
-*.bl
+*.DS_Store
+*tensor_log_MLP*
