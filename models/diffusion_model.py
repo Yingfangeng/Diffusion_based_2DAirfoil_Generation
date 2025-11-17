@@ -225,7 +225,7 @@ if __name__ == '__main__':
     # =================== Load the Dataset ====================
     df = pd.read_csv("aerofoil_data_normalised.csv")
     data_structure = 'raw_coordinates'   # pca / raw_coordiantes
-    save_path = './mdl_weight/test.pth' # store the trained model weights
+    save_path = './mdl_weight/raw_coords_conv_1d_200_epochs.pth' # store the trained model weights
 
     combined_coordinates = []
     cond_data = []
