@@ -5,6 +5,18 @@ from einops import repeat, rearrange
 from .embeddings import PositionalEmbedding
 from functools import partial
 
+
+class Affine(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.alpha = nn.Parameter(torch.ones(dim))
+        self.beta = nn.Parameter(torch.zeros(dim))
+
+    def forward(self, x):
+        return self.alpha * x + self.beta
+
+
+
 class Conv1DCondResNetBlock(nn.Module):
     def __init__(
         self,
@@ -37,8 +49,13 @@ class Conv1DCondResNetBlock(nn.Module):
 
         self.map_cond = nn.Linear(time_emb_dim + cond_emb_dim, out_channels * (2 if adaptive_scale else 1))
 
-        self.pre_norm = nn.Identity()
-        self.post_norm = nn.Identity()
+        if affine:
+            self.pre_norm = Affine(in_channels)
+            self.post_norm = Affine(out_channels)
+        else:
+            self.pre_norm = nn.Identity()
+            self.post_norm = nn.Identity()
+
 
 
     def forward(self, x, time_emb=None, cond_emb=None):
@@ -65,7 +82,7 @@ class Conv1DCondResNetBlock(nn.Module):
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = self.post_norm(x)
 
-        x = x + self.res_conv(orig) # add together the skipped signal
+        x = x + self.res_conv(orig)
         x = x * self.skip_scale
 
         return x
@@ -75,8 +92,8 @@ class Conv1DCFGResNet(nn.Module):
                  in_dim,
                  out_dim, 
                  cond_size,
-                 model_dim       = 128,      
-                 dim_mult        = [1,1,1,1],
+                 model_channel       = 128,      
+                 channel_multiply        = [1,1,1,1],
                  dim_mult_emb    = 4,
                  num_blocks      = 4, 
                  dropout         = 0.,
@@ -93,16 +110,16 @@ class Conv1DCFGResNet(nn.Module):
         self.in_dim = in_dim
         self.out_dim = out_dim
         self.cond_size = cond_size
-        self.model_dim = model_dim
+        self.model_channel = model_channel
         self.cond_drop_prob = cond_drop_prob
+        self.channel_multipy = channel_multiply
+        self.num_points = in_dim // 2
+        self.in_channels = 2
 
-        self.num_points = in_dim // 2       
-        self.in_channels = 2                
-
-        # Embedding dimensions (same as your original)
-        emb_dim  = model_dim * dim_mult_emb
-        time_dim = model_dim * dim_mult_time
-        cond_dim = model_dim * dim_mult_cond
+        # Embedding dimensions
+        emb_dim  = model_channel * dim_mult_emb
+        time_dim = model_channel * dim_mult_time
+        cond_dim = model_channel * dim_mult_cond
         block_kwargs = dict(dropout = dropout,
                             skip_scale=skip_scale,
                             adaptive_scale=adaptive_scale,
@@ -117,21 +134,27 @@ class Conv1DCFGResNet(nn.Module):
         self.map_time_layer = nn.Linear(time_dim, emb_dim)
         self.map_cond_layer = nn.Linear(cond_dim * cond_size, emb_dim)
 
-        # First Conv1D layer: (B, 2, L) -> (B, model_dim, L)
-        self.first_layer = nn.Conv1d(self.in_channels, model_dim, kernel_size=3, padding=1)
+        # First Conv1D layer
+        self.first_layer = nn.Conv1d(self.in_channels, model_channel, kernel_size=3, padding=1)
 
         # Residual blocks
         self.blocks = nn.ModuleList()
-        cout = model_dim
-        for level, mult in enumerate(dim_mult):
+        cout = model_channel
+        for level, mult in enumerate(channel_multiply):
             for _ in range(num_blocks):
                 cin = cout
-                cout = model_dim * mult
-                self.blocks.append(
-                    Conv1DCondResNetBlock(
-                        cin, cout, emb_dim, emb_dim, **block_kwargs
-                    )
-                )
+                cout = model_channel * mult
+                self.blocks.append(Conv1DCondResNetBlock(cin, cout, emb_dim, emb_dim, **block_kwargs))
+
+        for idx, mult in enumerate(reversed(channel_multiply)):
+            
+            if idx == 0:# avoid double bottle necks
+                pass
+            else:
+                for _ in range(num_blocks):
+                    cin = cout
+                    cout = model_channel * mult
+                    self.blocks.append(Conv1DCondResNetBlock(cin, cout, emb_dim, emb_dim, **block_kwargs))
 
         # Final Conv1D layer back to 2 channels, kernel_size=1 to keep length
         self.final_layer = nn.Conv1d(cout, self.in_channels, kernel_size=1)
@@ -179,9 +202,7 @@ class Conv1DCFGResNet(nn.Module):
         time_emb = self.map_time(time)                      
         cond_emb = self.map_cond(cond)                      
         time_emb = F.silu(self.map_time_layer(time_emb))    
-        cond_emb = F.silu(self.map_cond_layer(
-            cond_emb.reshape(cond_emb.shape[0], -1)         
-        ))                                                  
+        cond_emb = F.silu(self.map_cond_layer(cond_emb.reshape(cond_emb.shape[0], -1)))                                                  
 
     
         if cond_drop_prob is None:
@@ -190,25 +211,24 @@ class Conv1DCFGResNet(nn.Module):
             keep_mask = self.prob_mask_like((batch_size,), 1 - cond_drop_prob, device = x.device)
             null_cond_emb = repeat(self.null_emb, 'd -> b d', b = batch_size)
 
-            cond_emb = torch.where(
-                rearrange(keep_mask, 'b -> b 1'),
-                cond_emb,
-                null_cond_emb
-            )
+            cond_emb = torch.where(rearrange(keep_mask, 'b -> b 1'), cond_emb, null_cond_emb)
 
-
-        B, D = x.shape
+        B, D = x.shape # B is the batch size (128) and D is the dimension of the input data
         assert D == self.in_dim
-        x = x.view(B, self.num_points, self.in_channels)    
-        x = x.permute(0, 2, 1)                              
+        x = x.view(B, self.num_points, self.in_channels) # this step reshapes the data structure from 600x1 into 300x2. 
+        x = x.permute(0, 2, 1) # this step reshapes the shape of the data
  
-        x = self.first_layer(x)                            
+        # the first layer, lift the 300x2 dimension to 300x128
+        x = self.first_layer(x) 
 
+        # repeat for each of the Conv1d block
         for block in self.blocks:
-            x = block(x, time_emb, cond_emb)                
+            x = block(x, time_emb, cond_emb)
 
-        x = self.final_layer(F.silu(x))                     
+        # the final layer, remap to the original input dimension
+        x = self.final_layer(F.silu(x))
 
-        x = x.permute(0, 2, 1).reshape(B, -1)               
+        # reshape it back to the 600x1
+        x = x.permute(0, 2, 1).reshape(B, -1)
 
         return x

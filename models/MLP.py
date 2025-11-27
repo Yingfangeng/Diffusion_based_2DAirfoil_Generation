@@ -72,8 +72,8 @@ class CFGResNet(torch.nn.Module):
                  in_dim,
                 out_dim, 
                 cond_size,
-                model_dim       = 128,      # model depth, 128 filters
-                dim_mult        = [1,1,1,1],# dim multiplier for each resblock layer
+                model_channel       = 128,      # model depth, 128 filters
+                channel_multiply        = [1,1,1,1],# dim multiplier for each resblock layer
                 dim_mult_emb    = 4,
                 num_blocks      = 4,        # Number of resblocks(mid) per level.
                 dropout         = 0.,           # Dropout rate.
@@ -89,9 +89,9 @@ class CFGResNet(torch.nn.Module):
         super().__init__()
 
         # embedment dimension is the dimension of the labels: in our case the 5 flow conditions and the time step in diffusion
-        emb_dim  = model_dim * dim_mult_emb
-        time_dim = model_dim * dim_mult_time
-        cond_dim = model_dim * dim_mult_cond
+        emb_dim  = model_channel * dim_mult_emb
+        time_dim = model_channel * dim_mult_time
+        cond_dim = model_channel * dim_mult_cond
         block_kwargs = dict(dropout = dropout, skip_scale=skip_scale, adaptive_scale=adaptive_scale, affine=affine)
 
         self.null_emb = nn.Parameter(torch.randn(emb_dim)) 
@@ -102,16 +102,16 @@ class CFGResNet(torch.nn.Module):
         self.map_cond = PositionalEmbedding(size=cond_dim, type=emb_type)
         self.map_time_layer = nn.Linear(time_dim, emb_dim)
         self.map_cond_layer = nn.Linear(cond_dim*cond_size, emb_dim)
-        self.first_layer = nn.Linear(in_dim, model_dim)
+        self.first_layer = nn.Linear(in_dim, model_channel)
         self.blocks = nn.ModuleList()
-        cout = model_dim
+        cout = model_channel
 
         # for each block (layer) apply the ResNet Block once
         # The outer loop increases the ResNet block in depth, the inner loop stacks n ResNet block with the same depth
-        for level, mult in enumerate(dim_mult):
+        for level, mult in enumerate(channel_multiply):
             for _ in range(num_blocks):
                 cin = cout
-                cout = model_dim * mult
+                cout = model_channel * mult
                 self.blocks.append(CondResNetBlock(cin, cout, emb_dim, emb_dim, **block_kwargs))
         self.final_layer = nn.Linear(cout, out_dim) # the final layer use a fully connected layer
 

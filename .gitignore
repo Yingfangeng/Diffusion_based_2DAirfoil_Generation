@@ -8,9 +8,15 @@ __pycache__/
 *.bl
 *.sh
 *.log
+.pth
 job_sub.*
 generated_data/*
 generated_geom/*
 run_log/*
 *.DS_Store
 *tensor_log_MLP*
+denoising_gif/*
+frames/*
+.gif
+sdf_matrix/*
+mdl_weight/*
