@@ -3,7 +3,7 @@ data_structure: 'sdf'
 neural_network_sturcture: 'ResNet_UNet_2D'
 learning_rate: 1E-4
 num_epochs: 100
-batch_size: 64
+batch_size: 32
 model_channel: 64  # the number of channels for of first layer
 model_layer: 3     # number of layers under the same dimension
 model_channel_multiplication: [1,2, 4, 8] # dimension multiplication factor
@@ -12,5 +12,5 @@ cond_scale: 1    # CFG guidance scale
 rescaled_phi: 0  # Mixing ratio of the std_function
 device: 'cuda'
 component_number: 256
-sdf_path: 'sdf_matrix_128'
+sdf_path: 'sdf_matrix'
 restart: False    # restart from the previous training log
