@@ -1,5 +1,5 @@
 import os
-from tqdm import trange
+from tqdm import trange, tqdm
 import numpy as np
 import torch
 from torch import nn
@@ -270,6 +270,28 @@ class StackedRandomGenerator:
 
 
 
+def save_checkpoint(path, epoch, model, optimizer, scheduler, best_val_loss):
+    checkpoint = {
+        'epoch': epoch,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'scheduler_state_dict': scheduler.state_dict(),
+        'best_val_loss': best_val_loss,
+    }
+    torch.save(checkpoint, path)
+
+
+def load_checkpoint(path, model, optimizer=None, scheduler=None, device='cpu'):
+    checkpoint = torch.load(path, map_location=device)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    
+    if optimizer is not None:
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        
+    if scheduler is not None:
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+
+    return checkpoint['epoch'], checkpoint['best_val_loss']
 
 
 #======================== The Main Function ==========================
@@ -294,7 +316,7 @@ if __name__ == '__main__':
         model_config = yaml.safe_load(f)
 
     df = pd.read_csv(model_config['dataset_csv_path'])
-    df = df.sample(n=100, random_state=42)
+    # df = df.sample(n=100, random_state=42)
     data_structure = model_config['data_structure']
     learning_rate = float(model_config['learning_rate'])
     num_epochs = model_config['num_epochs']
@@ -308,7 +330,9 @@ if __name__ == '__main__':
     device=model_config['device']
     nn_structure=model_config['neural_network_sturcture']
     # condition = model_config['condition']
-    save_path = f"./mdl_weight/{data_structure}_{nn_structure}_{model_channel}_{model_layer}_{len(model_channel_multiplication)}_with_{num_epochs}_epochs_ttt.pth"
+    model_code = f"./mdl_weight/{data_structure}_{nn_structure}_{model_channel}_{model_layer}_{len(model_channel_multiplication)}_with_{num_epochs}_epochs_resume"
+    save_path = f"{model_code}.pth"
+    check_point_path = f"{model_code}_check_point.pth"
     print(f'The model weight will be saved to path {save_path}')
     combined_coordinates = []
     cond_data = []
@@ -349,11 +373,12 @@ if __name__ == '__main__':
 
     elif data_structure == 'sdf':
         num_components = int(model_config['component_number'])
+        sdf_path = model_config['sdf_path']
         mode = 'sdf'
         coordinates = {}
         unique_names = df['name'].unique()
         for i in unique_names:
-            sdf = np.load(f'sdf_matrix/{i}.npy')
+            sdf = np.load(f'{sdf_path}/{i}.npy')
             coordinates[i] = sdf
 
     else:
@@ -398,20 +423,32 @@ if __name__ == '__main__':
         scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2, eta_min=1e-6, last_epoch=-1)
         scheduler_iters = len(train_loader)
         print('passed the optimiser initialisation')
+        
         # intiailise tracking variables
         loss_v = []
         loss_avg = []
 
         best_val_loss = float('inf')
+        
+        if model_config['restart'] == True:
+            last_epoch, best_val_loss = load_checkpoint(check_point_path, model, optimizer, scheduler, device)
+            start_epoch = last_epoch + 1
+            print(f"Resuming from epoch {start_epoch}, previous lowest loss is={best_val_loss}")
+        else:
+            print("Starting new training run.")
+
         print('training ...')
         for epoch in trange(num_epochs): # use trange to create a process bar with tqdm
-            torch.cuda.empty_cache()
-            torch.cuda.reset_peak_memory_stats()
+
             model.train()
             train_loss = 0.
             num_items = 0
 
-            for step, batch in enumerate(train_loader):
+            # for step, batch in enumerate(train_loader):
+            for step, batch in tqdm(enumerate(train_loader),
+                            total=len(train_loader),
+                            desc=f"Batch (epoch {epoch})",
+                            leave=False):
                 x = batch[0]
                 c = batch[1]
                 x = x.to(device)
@@ -446,14 +483,17 @@ if __name__ == '__main__':
                     val_loss += loss.item() * x_val.size(0)
 
             val_loss /= len(val_loader.dataset)
+            
+            
 
             # Save the model if validation loss has decreased
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 torch.save(model.state_dict(), save_path)
             # Optionally print epoch statistics
+            save_checkpoint(check_point_path, epoch, model, optimizer, scheduler, best_val_loss)
             print(f'Epoch {epoch}: Training Loss: {train_loss / len(train_loader.dataset):.4f}, Validation Loss: {val_loss:.4f}')
-            print("mem:", torch.cuda.memory_allocated() / 1024**2, "MB")
+
 
     else:
         model.load_state_dict(torch.load(save_path))

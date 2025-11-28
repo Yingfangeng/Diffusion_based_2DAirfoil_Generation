@@ -12,3 +12,5 @@ cond_scale: 1    # CFG guidance scale
 rescaled_phi: 0  # Mixing ratio of the std_function
 device: 'cuda'
 component_number: 256
+sdf_path: 'sdf_matrix_128'
+restart: False    # restart from the previous training log
