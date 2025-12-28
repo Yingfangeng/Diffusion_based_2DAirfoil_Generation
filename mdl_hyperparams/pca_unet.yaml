@@ -1,4 +1,4 @@
-dataset_csv_path: 'aerofoil_data_normalised_256.csv'
+dataset_csv_path: 'dataset/aerofoil_data_clean_normalised.csv'
 data_structure: 'pca' 
 neural_network_sturcture: 'ResNet_UNet'
 learning_rate: 1E-4
@@ -12,3 +12,4 @@ cond_scale: 1    # CFG guidance scale
 rescaled_phi: 0  # Mixing ratio of the std_function
 device: 'cuda'
 component_number: 32
+restart: False

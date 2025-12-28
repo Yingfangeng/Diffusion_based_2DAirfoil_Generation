@@ -6,10 +6,10 @@ from torch import nn
 from torch.utils.data import Dataset
 import pandas as pd
 from sklearn.decomposition import PCA
-from functools import partial
-from einops import rearrange, repeat
 import yaml
 import argparse
+import matplotlib.pyplot as plt
+import time
 
 from .Conv_1D import *
 from .MLP import *
@@ -18,20 +18,6 @@ from .Conv_1D_ResNet_UNet import *
 from .Conv_2D_ResNet_UNet import *
 
 
-
-
-# The seeding process to ensure training process is repeatable
-# def seed_everything(seed):
-#     os.environ['PYTHONHASHSEED'] = str(seed)
-#     np.random.seed(seed)
-#     torch.manual_seed(seed)
-#     torch.cuda.manual_seed(seed)
-#     torch.backends.cudnn.deterministic = True
-#     torch.backends.cudnn.benchmark = True
-
-
-# EDM is a modified diffusion model (comapred to the orignal DDPM)
-# and its core is still the CFG architecture
 class EDM_CFG(torch.nn.Module):
     def __init__(self,
         in_dim, 
@@ -40,7 +26,7 @@ class EDM_CFG(torch.nn.Module):
         model_channel      = 128,
         channel_multiply   = [1,1,1,1],
         dim_mult_emb       = 4,
-        num_blocks         = 4,      
+        num_blocks         = 4,
         dropout            = 0.,
         emb_type           = "sinusoidal",
         dim_mult_time      = 1,
@@ -48,7 +34,7 @@ class EDM_CFG(torch.nn.Module):
         sigma_min          = 0.02,
         sigma_max          = 80.,
         sigma_data         = 0.5,
-        nn_structure         = 'MLP',
+        nn_structure       = 'MLP',
         **model_kwargs,
     ):
         super().__init__()
@@ -60,6 +46,7 @@ class EDM_CFG(torch.nn.Module):
         self.sigma_min = sigma_min
         self.sigma_max = sigma_max
         self.sigma_data = sigma_data
+        self.nn_structure = nn_structure
 
         if nn_structure == 'MLP':
             self.model = CFGResNet(self.in_dim, self.out_dim, self.label_dim, model_channel=model_channel, channel_multiply=channel_multiply, dim_mult_emb=dim_mult_emb, num_blocks=num_blocks,
@@ -76,7 +63,7 @@ class EDM_CFG(torch.nn.Module):
         elif nn_structure == 'ResNet_UNet':
             self.model = Conv1DResNetUNetCFG(self.in_dim, self.out_dim, self.label_dim, model_channel=model_channel, channel_multiply=channel_multiply, dim_mult_emb=dim_mult_emb, num_blocks=num_blocks,
                                        dropout=dropout, emb_type=emb_type, dim_mult_time=dim_mult_time, **model_kwargs)
-        
+
         elif nn_structure == 'ResNet_UNet_2D':
             self.model = Conv2DResNetUNetCFG(self.in_dim, self.out_dim, self.label_dim, model_channel=model_channel, channel_multiply=channel_multiply, dim_mult_emb=dim_mult_emb, num_blocks=num_blocks,
                                        dropout=dropout, emb_type=emb_type, dim_mult_time=dim_mult_time, **model_kwargs)
@@ -114,20 +101,24 @@ class Aerofoil_Dataset(Dataset):
         self.mode = mode
         self.name = name
 
-
     def __len__(self):
         return len(self.cond_data)
 
     def __getitem__(self, idx):
-        if mode == 'sdf':
+        if self.mode == 'sdf':
             name_label = self.name[idx]
-            coordinates = self.coordinates[name_label]
+            # coordinates = self.coordinates[name_label]
             cond_data = self.cond_data[idx]
+            sdf = self.coordinates[name_label]
+            sdf = np.expand_dims(sdf, 0)
+
+            return torch.FloatTensor(sdf), torch.FloatTensor(cond_data)
+
+
         else:
             coordinates = self.coordinates[idx]
             cond_data = self.cond_data[idx]
-
-        return torch.tensor(coordinates, dtype=torch.float32), torch.tensor(cond_data, dtype=torch.float32)
+            return torch.tensor(coordinates, dtype=torch.float32), torch.tensor(cond_data, dtype=torch.float32)
 
 
 
@@ -152,7 +143,7 @@ class EDMLoss:
         sigma = (rnd * self.P_std + self.P_mean).exp()
         sigma = sigma.view([images.shape[0]] + [1] * (images.ndim - 1))
 
-        weight = (sigma ** 2 + self.sigma_data ** 2) / (sigma * self.sigma_data) ** 2
+        weight = (sigma ** 2 + self.sigma_data ** 2) / ((sigma * self.sigma_data) ** 2 + 1e-8)
 
         y = images
         n = torch.randn_like(y) * sigma
@@ -163,7 +154,7 @@ class EDMLoss:
 
 
 
-#  This is the model deployment function, which start with a pure nosie and apply the edm model repeatedly until sigma = 0
+# This is the model deployment function, which start with a pure nosie and apply the edm model repeatedly until sigma = 0
 def edm_sampler(
     net,   # net is the model
     latents,# this is pure noise
@@ -173,10 +164,10 @@ def edm_sampler(
     sigma_min = 0.002, # smallest noise level
     sigma_max = 80, # largest noise level
     rho = 7, # a value to control how hoise levels are spaced
-    S_churn = 0, 
-    S_min = 0, 
-    S_max = float('inf'), 
-    S_noise = 0,
+    S_churn = 40, 
+    S_min = 0.05, 
+    S_max = 50, 
+    S_noise = 1.003,
     deterministic=False
 ):  # rho is a hyperparam that can be used to tune the amount of noise added per step
 
@@ -206,6 +197,7 @@ def edm_sampler(
             gamma = min(S_churn / num_steps, np.sqrt(2) - 1) if S_min <= t_cur <= S_max else 0
             t_hat = net.round_sigma(t_cur + gamma * t_cur)
             x_hat = x_cur + (t_hat ** 2 - t_cur ** 2).sqrt() * S_noise * randn_like(x_cur)
+ 
         else:
             t_hat = t_cur # the noise we added at this particular step
             x_hat = x_cur # the noisy signal that is to be denoised
@@ -229,14 +221,14 @@ def edm_sampler(
         # ========new============
         # Euler step.
         B = x_hat.shape[0]
-        sigma_hat = t_hat.expand(B, 1)          # shape (B, 1)
+        sigma_hat = t_hat.expand(B, 1)
         denoised = net(x_hat, sigma_hat, class_labels).to(torch.float64)
         d_cur = (x_hat - denoised) / t_hat
         x_next = x_hat + (t_next - t_hat) * d_cur
 
         # Apply 2nd order correction.
         if i < num_steps - 1:
-            sigma_next = t_next.expand(B, 1)    # shape (B, 1)
+            sigma_next = t_next.expand(B, 1)
             denoised = net(x_next, sigma_next, class_labels).to(torch.float64)
             d_prime = (x_next - denoised) / t_next
             x_next = x_hat + (t_next - t_hat) * (0.5 * d_cur + 0.5 * d_prime)
@@ -255,6 +247,7 @@ class StackedRandomGenerator:
         for _ in seeds:
             g = torch.Generator(device)
             g.seed()
+            # g.manual_seed(1)
             self.generators.append(g)
 
     def randn(self, size, **kwargs):
@@ -294,6 +287,8 @@ def load_checkpoint(path, model, optimizer=None, scheduler=None, device='cpu'):
     return checkpoint['epoch'], checkpoint['best_val_loss']
 
 
+
+
 #======================== The Main Function ==========================
 
 
@@ -316,7 +311,8 @@ if __name__ == '__main__':
         model_config = yaml.safe_load(f)
 
     df = pd.read_csv(model_config['dataset_csv_path'])
-    # df = df.sample(n=100, random_state=42)
+    length = len(df)
+    # df = df.sample(n=int(0.1*length), random_state=42)
     data_structure = model_config['data_structure']
     learning_rate = float(model_config['learning_rate'])
     num_epochs = model_config['num_epochs']
@@ -331,7 +327,7 @@ if __name__ == '__main__':
     nn_structure=model_config['neural_network_sturcture']
     # condition = model_config['condition']
     model_code = f"./mdl_weight/{data_structure}_{nn_structure}_{model_channel}_{model_layer}_{len(model_channel_multiplication)}_with_{num_epochs}_epochs_resume"
-    save_path = f"{model_code}.pth"
+    save_path = f"{model_code}_final.pth"
     check_point_path = f"{model_code}_check_point.pth"
     print(f'The model weight will be saved to path {save_path}')
     combined_coordinates = []
@@ -392,8 +388,8 @@ if __name__ == '__main__':
     n_train = int(train_val_division * n)
     train_set, val_set = torch.utils.data.random_split(dataset, [n_train, n - n_train], generator=generator)
     print('passed data division')
-    # np.save("val_indices_clean.npy", val_set.indices)
-    # np.save("train_indices_clean.npy", train_set.indices)
+    # np.save("dataset/val_indices_clean.npy", val_set.indices)
+    # np.save("dataset/train_indices_clean.npy", train_set.indices)
 
     Training = True
     
@@ -420,7 +416,7 @@ if __name__ == '__main__':
 
         # initialise the optimiser and scheduler
         optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2, eta_min=1e-6, last_epoch=-1)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=100, T_mult=2, eta_min=1e-6, last_epoch=-1)
         scheduler_iters = len(train_loader)
         print('passed the optimiser initialisation')
         
@@ -435,11 +431,11 @@ if __name__ == '__main__':
             start_epoch = last_epoch + 1
             print(f"Resuming from epoch {start_epoch}, previous lowest loss is={best_val_loss}")
         else:
+            start_epoch = 0
             print("Starting new training run.")
 
         print('training ...')
-        for epoch in trange(num_epochs): # use trange to create a process bar with tqdm
-
+        for epoch in trange(start_epoch, num_epochs, initial=start_epoch): # use trange to create a process bar with tqdm
             model.train()
             train_loss = 0.
             num_items = 0
@@ -460,6 +456,7 @@ if __name__ == '__main__':
                 # Compute gradients, update model weights and progress learning rates
                 optimizer.zero_grad()
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 optimizer.step()
                 scheduler.step(epoch + step / scheduler_iters)
                 # Store the training loss
@@ -479,7 +476,7 @@ if __name__ == '__main__':
                     c_val = c_val.to(device)
 
                     tmp_loss = loss_fn(model, x_val, c_val)
-                    loss = tmp_loss.sum().mul(1/x.shape[0])
+                    loss = tmp_loss.sum().mul(1/x_val.shape[0])                    
                     val_loss += loss.item() * x_val.size(0)
 
             val_loss /= len(val_loader.dataset)
