@@ -119,7 +119,7 @@ class Conv1DResNetUNetCFG(nn.Module):
         if data_structure == 'raw_coordinates':
             self.in_channels = 2
             self.num_points = in_dim // 2
-        elif data_structure == 'pca':
+        elif data_structure == 'pca' or '1D_params':
             self.in_channels = 1
             self.num_points = number_of_pc
         else:
@@ -242,6 +242,8 @@ class Conv1DResNetUNetCFG(nn.Module):
                 x = block(x, emb)
             skips.append(x)
             x = self.maxpool(x)
+
+
 
         #  Bottleneck 
         for block in self.bottleneck_blocks:

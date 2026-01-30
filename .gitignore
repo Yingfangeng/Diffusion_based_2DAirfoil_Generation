@@ -21,3 +21,4 @@ frames/*
 sdf_matrix/*
 mdl_weight/*
 fig/*
+*.curve

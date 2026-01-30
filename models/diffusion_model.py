@@ -327,32 +327,38 @@ if __name__ == '__main__':
     nn_structure=model_config['neural_network_sturcture']
     # condition = model_config['condition']
     model_code = f"./mdl_weight/{data_structure}_{nn_structure}_{model_channel}_{model_layer}_{len(model_channel_multiplication)}_with_{num_epochs}_epochs_resume"
-    save_path = f"{model_code}_final.pth"
+    save_path = f"{model_code}_1D_test.pth"
     check_point_path = f"{model_code}_check_point.pth"
     print(f'The model weight will be saved to path {save_path}')
     combined_coordinates = []
     cond_data = []
 
-    for _, row in df.iterrows():
-        x_coords = np.fromstring(row["x"].strip("[]"), sep=" ")
-        y_coords = np.fromstring(row["y"].strip("[]"), sep=" ")
-        paired = np.column_stack((x_coords, y_coords)).flatten()
-        combined_coordinates.append(paired)
-    coordinates = np.array(combined_coordinates)
 
-
-    name = df['name'].to_numpy()
-    Ma = df['Ma'].to_numpy()
-    Re = df['Re'].to_numpy()
-    AOA = df['AOA'].to_numpy()
-    CL = df['CL'].to_numpy()
-    CD = df['CD'].to_numpy()
+    if data_structure != '1D_params':
+        for _, row in df.iterrows():
+            x_coords = np.fromstring(row["x"].strip("[]"), sep=" ")
+            y_coords = np.fromstring(row["y"].strip("[]"), sep=" ")
+            paired = np.column_stack((x_coords, y_coords)).flatten()
+            combined_coordinates.append(paired)
+        coordinates = np.array(combined_coordinates)
 
 
 
-    for i in range(len(name)):
-        cond_data.append([AOA[i], Ma[i], Re[i], CL[i], CD[i]])
-    cond_size = len(cond_data[0])
+        name = df['name'].to_numpy()
+        Ma = df['Ma'].to_numpy()
+        Re = df['Re'].to_numpy()
+        AOA = df['AOA'].to_numpy()
+        CL = df['CL'].to_numpy()
+        CD = df['CD'].to_numpy()
+
+
+
+        for i in range(len(name)):
+            cond_data.append([AOA[i], Ma[i], Re[i], CL[i], CD[i]])
+        cond_size = len(cond_data[0])
+
+
+
 
 
     if data_structure == 'pca':
@@ -376,6 +382,49 @@ if __name__ == '__main__':
         for i in unique_names:
             sdf = np.load(f'{sdf_path}/{i}.npy')
             coordinates[i] = sdf
+
+    elif data_structure == '1D_params':
+
+        mode = '1D_params'
+        
+        name = 'trivial'
+
+        num_components = int(model_config['component_number'])
+
+        R_tip_1 = df['R_tip_1'].to_numpy()
+        R_mean_1 = df['R_mean_1'].to_numpy()
+        R_hub_1 = df['R_hub_1'].to_numpy()
+        beta_b1_hub = df['beta_b1_hub'].to_numpy()
+        beta_b1_tip = df['beta_b1_tip'].to_numpy()
+        beta_b1_mean = df['beta_b1_mean'].to_numpy()
+        beta_b2 = df['beta_b2'].to_numpy()
+        R_mean_2 = df['R_mean_2'].to_numpy()
+        b_2 = df['b_2'].to_numpy()
+        L_z = df['L_z'].to_numpy()
+        s = df['s'].to_numpy()
+        t = df['t'].to_numpy()
+        nblades = df['nblades'].to_numpy()
+        n_splitter_blades = df['n_splitter_blades'].to_numpy()
+        b3 = df['b3'].to_numpy()
+        r3 = df['r3'].to_numpy()
+        slip_factor = df['slip_factor'].to_numpy()
+
+        m_dot = df['m_dot'].to_numpy()
+        omega = df['omega'].to_numpy()
+        pressure_ratio = df['pressure_ratio'].to_numpy()
+        efficiency = df['efficiency'].to_numpy()
+        
+        
+        coordinates = []
+        cond_data = []
+
+        for i in range(len(df)):
+            coordinates.append([R_tip_1[i], R_mean_1[i], R_hub_1[i], beta_b1_hub[i], beta_b1_tip[i], beta_b1_mean[i], 
+                               beta_b2[i], R_mean_2[i], b_2[i], L_z[i],  t[i], nblades[i], n_splitter_blades[i], b3[i], r3[i], slip_factor[i]])
+            
+            cond_data.append([m_dot[i], omega[i], pressure_ratio[i], efficiency[i]])
+        
+        cond_size = len(cond_data[0])
 
     else:
         raise NotImplementedError

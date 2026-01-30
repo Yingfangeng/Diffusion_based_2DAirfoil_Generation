@@ -17,6 +17,8 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm
 from tqdm import tqdm
 import time
+from meanline.meanline import *
+import signal
 
 
 from models.diffusion_model import EDM_CFG, edm_sampler, StackedRandomGenerator
@@ -545,9 +547,11 @@ def plotting_function(data_structure, x_coords_list, y_coords_list, CL_actual_li
     else: 
         for idx, _ in enumerate(x_coords_list):
             if count == 0:
-                ax1.plot(x_coords_list[idx],y_coords_list[idx], color = 'b')
+                ax1.plot(x_coords_list[idx],y_coords_list[idx])
             else:
                 ax1.plot(x_coords_list[idx],y_coords_list[idx])
+            # if data_structure =='raw_coordinates':
+            #     ax1.scatter(x_coords_list[idx][::4],y_coords_list[idx][::4], color = 'b')
             count = count +1
         count1 = 0
         count2 = 0
@@ -829,8 +833,8 @@ def validation_accuracy(model_config_path, file_name, band = None, mode = None, 
     # CL_error = (CL - CL_actual)/CL
     # CD_error = (CD - CD_actual)/CD
 
-    CL_error = CL - CL_actual
-    CD_error = CD - CD_actual
+    CL_error = (CL - CL_actual)/CL
+    CD_error = (CD - CD_actual)/CD
     
 
     CL_sum_of_square = 0
@@ -1183,6 +1187,139 @@ def denoise_process_plot(model, data_structure, device, sample_size, num_steps, 
 
 
 
+class TimeoutException(Exception):
+    pass
+
+def handler(signum, frame):
+    raise TimeoutException()
+
+def run_meanline(geometry, m_dot, omega, timeout=10):
+    signal.signal(signal.SIGALRM, handler)
+    signal.alarm(timeout)
+
+    try:
+        meanline = MeanLine(geometry)
+        meanline.execution_impeller_inlet(m_dot, omega, 'Centrifugal')
+        meanline.execution_impeller_outlet(m_dot, omega, 'Centrifugal')
+        meanline.execution_vaneless_diffuser('Impeller', 'Centrifugal', m_dot)
+        signal.alarm(0)
+        return meanline, True
+
+    except TimeoutException:
+        print("Take too long for meanline to converge!")
+        return None, False
+
+    except Exception as e:
+        signal.alarm(0)
+        print('Meanline not converged')
+        return None, False
+
+
+
+
+
+
+
+
+def validation_1D(device, sample_size, model, num_steps):
+    
+    
+    df = pd.read_csv('dataset/1D_compressor_geometry_normalised.csv')
+    min_max = pd.read_csv('dataset/1D_compressor_geometry_minmax.csv')
+
+    if ("min" in min_max.columns) and ("max" in min_max.columns):
+        feature_col = min_max.columns[0]  # usually "Unnamed: 0"
+        if feature_col not in ["min", "max"]:
+            min_max = min_max.set_index(feature_col)
+
+    # Clean any whitespace issues in feature names
+    min_max.index = min_max.index.astype(str).str.strip()
+
+    i = 234
+    
+    
+    pr_normalised = df.loc[i, 'pressure_ratio']
+    eta_normalised = df.loc[i, 'efficiency']
+    omega_normalised = df.loc[i, 'omega']
+    m_dot_normalised = df.loc[i, 'm_dot']
+
+    number_of_trials = 0
+    success = False
+    while not success and number_of_trials < 10:
+        cond = (torch.tensor([omega_normalised, m_dot_normalised, pr_normalised, eta_normalised]).to(device))
+        
+        rnd = StackedRandomGenerator(device, range(sample_size))
+        latents = rnd.randn([sample_size, model.in_dim], device=device)
+
+
+        with torch.no_grad():
+            samples, _ = edm_sampler(model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
+
+        samples = samples.float()
+        sample = samples[0].cpu().numpy()
+
+        geom_cols = ['R_tip_1', 'R_mean_1', 'R_hub_1', 'beta_b1_hub', 'beta_b1_tip', 'beta_b1_mean', 
+                    'beta_b2', 'R_mean_2', 'b_2', 'L_z',  't', 'nblades', 'n_splitter_blades', 'b3', 'r3', 'slip_factor']
+
+
+        mins = min_max.loc[geom_cols, "min"].to_numpy(dtype=np.float32)
+        maxs = min_max.loc[geom_cols, "max"].to_numpy(dtype=np.float32)
+
+        denormalised_geometry = sample * (maxs + 0.0000000000000001 - mins) + mins
+
+        geometry  = {
+            'imp_type': 'Centrifugal', 
+            'P_01': 101325, 
+            'T_01': 288,
+            'R_tip_1': float(denormalised_geometry[0]), 
+            'R_mean_1': float(denormalised_geometry[1]), 
+            'R_hub_1': float(denormalised_geometry[2]),
+            'alpha_1': 0, 
+            'beta_b1_hub': float(denormalised_geometry[3]), 
+            'beta_b1_tip': float(denormalised_geometry[4]),
+            'beta_b1_mean': float(denormalised_geometry[5]),
+            'lambda_1': 1.0, 
+            'R_mean_2': float(denormalised_geometry[6]), 
+            'beta_b2': float(denormalised_geometry[7]),
+            'lambda_2': 1.0, 
+            'b_2': float(denormalised_geometry[8]), 
+            'L_z': float(denormalised_geometry[9]), 
+            't': float(denormalised_geometry[10]), 
+            's': 0.0003,
+            'nblades': round(denormalised_geometry[11]),
+            'n_splitter_blades': round(denormalised_geometry[12]),
+            'b3': float(denormalised_geometry[13]), 
+            'r3': float(denormalised_geometry[14]),
+            'slip_factor': float(denormalised_geometry[15])}
+
+
+
+        m_dot = m_dot_normalised*(min_max.loc['m_dot', 'max']- min_max.loc['m_dot', 'min']) + min_max.loc['m_dot', 'min']
+        omega_original = omega_normalised*(min_max.loc['omega', 'max']- min_max.loc['omega', 'min']) + min_max.loc['omega', 'min']
+
+        PR_original = pr_normalised*(min_max.loc['pressure_ratio', 'max']- min_max.loc['pressure_ratio', 'min']) + min_max.loc['pressure_ratio', 'min']
+        eta_original = eta_normalised*(min_max.loc['efficiency', 'max']- min_max.loc['efficiency', 'min']) + min_max.loc['efficiency', 'min']
+
+        omega = (omega_original*60)/(2*np.pi)
+
+        meanline, success = run_meanline(geometry, m_dot, omega)
+
+        number_of_trials += 1
+
+    if success:
+        stage_pressure_ratio = meanline.pressure_ratio
+        stage_efficiency = meanline.stage_eff
+        work_coefficient = meanline.psi
+        print(f'mass flow rate: {m_dot} kg/s, RPM: {omega}')
+        print(f'Generated design pressure ratio: {stage_pressure_ratio}, efficiency {stage_efficiency}.' )
+        print(f'Original design pressure ratio: {PR_original}, efficiency {eta_original}.')
+    else:
+        print(f'Cannot generate feasible geometry after {number_of_trials}.')
+
+
+
+
+
 
 def model_deployment(mode, model_config_path, sample_number=1, AOA=None, Ma=None, Re=None, CL=None, CD=None, 
                      num_steps = None, fig_size = None, manual_seed = None, lim = 0.5, multiple_design = 1, 
@@ -1245,6 +1382,18 @@ def model_deployment(mode, model_config_path, sample_number=1, AOA=None, Ma=None
         model.load_state_dict(torch.load(save_path))
 
 
+    elif data_structure == '1D_params':
+        
+        model = EDM_CFG(num_components, num_components, cond_size=4, model_channel=model_channel,
+                channel_multiply=model_channel_multiplication, dim_mult_emb=4, num_blocks=model_layer,
+                dropout=0, emb_type="sinusoidal", dim_mult_time=1, nn_structure=nn_structure,
+                dim_mult_cond=1, cond_drop_prob=0, adaptive_scale=True, skip_scale=1.0, affine=False, data_structure=data_structure, 
+                    number_of_pc = num_components)
+        pca = None
+        model.load_state_dict(torch.load(save_path))
+
+
+
 
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Total parameters: {total_params:,}")
@@ -1252,14 +1401,17 @@ def model_deployment(mode, model_config_path, sample_number=1, AOA=None, Ma=None
     model = model.to(device)
 
 
-    if mode == 'denoise_process_plot':
-        denoise_process_plot(model, data_structure, device, sample_number, num_steps, pca, fig_size, manual_seed, num_components, num_components)
+    if data_structure != '1D_params':
+        if mode == 'denoise_process_plot':
+            denoise_process_plot(model, data_structure, device, sample_number, num_steps, pca, fig_size, manual_seed, num_components, num_components)
 
-    else: 
-        validation_plot(model, sample_number, data_structure, device, mode, pca, num_steps, manual_seed, 
-                    lim, multiple_design, num_components, num_components, x_foil_timeout, CL_tolerence, 
-                    CD_tolerence, max_iteration, distribution_plot_switch, off_design_plot_switch, Re, Ma, AOA, CL, CD)
-        
+        else: 
+            validation_plot(model, sample_number, data_structure, device, mode, pca, num_steps, manual_seed, 
+                        lim, multiple_design, num_components, num_components, x_foil_timeout, CL_tolerence, 
+                        CD_tolerence, max_iteration, distribution_plot_switch, off_design_plot_switch, Re, Ma, AOA, CL, CD)
+    
+    elif data_structure == '1D_params':
+        validation_1D(device, sample_number, model, num_steps)
 
 
 
