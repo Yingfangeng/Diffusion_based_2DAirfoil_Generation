@@ -19,10 +19,11 @@ from tqdm import tqdm
 import time
 from meanline.meanline import *
 import signal
+import contextlib
 
 
 from models.diffusion_model import EDM_CFG, edm_sampler, StackedRandomGenerator
-
+from meanline.impeller import Blade_Forming_3D
 
 
 text_font = 'Liberation Sans'
@@ -184,13 +185,6 @@ def xfoil_calculation(x,y,AOA,Re,Ma,CL,CD, x_foil_timeout):
 
 
 def load_data_set(data_structure):
-    # if data_structure != 'pca':
-    #     df = pd.read_csv("dataset/aerofoil_data_normalised_256.csv")
-    #     df2 = pd.read_csv("dataset/aerofoil_data_256.csv")
-    #     val_indices = np.load("dataset/val_indices_256.npy")
-    #     train_indices = np.load("dataset/train_indices_256.npy")
-    #     min_max = pd.read_csv('dataset/min_max_256.csv')
-
 
     df = pd.read_csv("dataset/aerofoil_data_clean_normalised.csv")
     df2 = pd.read_csv("dataset/aerofoil_data_clean.csv")
@@ -812,17 +806,42 @@ def validation_accuracy(model_config_path, file_name, band = None, mode = None, 
     unfeasible_design_number = []
     total_design_number = []
     
-    for idx in range(len(results)):
-        unfeasible_design_number.append(results['unfeasible_design'].loc[idx])
-        total_design_number.append(results['design_iteration'].loc[idx])
-        if results['CL_actual'].loc[idx] == 999:
-            unfeasible = unfeasible + 1
-        else:
-            CL.append(results['CL'].loc[idx])
-            CD.append(results['CD'].loc[idx])
-            CL_actual.append(results['CL_actual'].loc[idx])
-            CD_actual.append(results['CD_actual'].loc[idx])
+    if data_structure != '1D_params':
+        
+        first_variable_name = 'CL'
+        second_variable_name = 'CD'
+        first_variable_name_latex = '$C_L$'
+        second_variable_name_latex = '$C_D$'
+        for idx in range(len(results)):
+            unfeasible_design_number.append(results['unfeasible_design'].loc[idx])
+            total_design_number.append(results['design_iteration'].loc[idx])
             
+            if results['CL_actual'].loc[idx] == 999:
+                unfeasible = unfeasible + 1
+            else:
+                CL.append(results['CL'].loc[idx])
+                CD.append(results['CD'].loc[idx])
+                CL_actual.append(results['CL_actual'].loc[idx])
+                CD_actual.append(results['CD_actual'].loc[idx])
+    else:
+        first_variable_name = 'PR'
+        second_variable_name = 'Eta'
+        first_variable_name_latex = '$PR$'
+        second_variable_name_latex = '$\eta$'
+
+        for idx in range(len(results)):
+            unfeasible_design_number.append(results['unfeasible_design'].loc[idx])
+            total_design_number.append(results['design_iteration'].loc[idx])
+            if results['pr_actual'].loc[idx] == 999:
+                unfeasible = unfeasible + 1
+            else:
+                CL.append(results['pr_original'].loc[idx])
+                CD.append(results['eta_original'].loc[idx])
+                CL_actual.append(results['pr_actual'].loc[idx])
+                CD_actual.append(results['eta_actual'].loc[idx])   
+
+
+    
 
     CL = np.array(CL)
     CD = np.array(CD)
@@ -847,6 +866,7 @@ def validation_accuracy(model_config_path, file_name, band = None, mode = None, 
     upper_band_grad = 1 + band_1
     lower_band_grad = 1 - band_1
 
+
     for idx, i in enumerate(CL_error):
         if CL[idx] >= CL_axis_min and CL[idx] <= CL_axis_max: 
             if abs(i) <= upper_band_grad-1:
@@ -855,7 +875,7 @@ def validation_accuracy(model_config_path, file_name, band = None, mode = None, 
             if abs(i) < 1:
                 CL_sum_of_square = CL_sum_of_square + i**2
             else:
-                print('Outlier in CL')
+                print(f'Outlier in {first_variable_name}')
     CL_rmse = (CL_sum_of_square/len(CL_error))**0.5
         
 
@@ -867,16 +887,16 @@ def validation_accuracy(model_config_path, file_name, band = None, mode = None, 
             if abs(i) < 1:
                 CD_sum_of_square = CD_sum_of_square + i**2
             else:
-                print('Outlier in CD')
+                print(f'Outlier in {second_variable_name}')
     CD_rmse = (CD_sum_of_square/len(CD_error))**0.5
     
 
-    print(f'The validation takes {len(results)} samples, among which {unfeasible} ({100*(unfeasible/len(results)):.2f}%) designs are unfeasible after 10 trials.')
+    print(f'The validation takes {len(results)} samples, among which {unfeasible} ({100*(unfeasible/len(results)):.2f}%) designs are unfeasible after 100 trials.')
     print(f'The accuracy information of the {len(CL)} feasible designs are shown below:')
-    print('CL RMSE is:', CL_rmse)
-    print('CD RMSE is:', CD_rmse)
-    print(f'{int(100*(CL_in_bound)/(len(CL)))}% samples have CL within {int(band_1*100)}% relative error.')
-    print(f'{int(100*(CD_in_bound)/(len(CL)))}% samples have CD within {int(band_1*100)}% relative error.')
+    print(f'{first_variable_name} RMSE is:', CL_rmse)
+    print(f'{second_variable_name} RMSE is:', CD_rmse)
+    print(f'{int(100*(CL_in_bound)/(len(CL)))}% samples have {first_variable_name} within {int(band_1*100)}% relative error.')
+    print(f'{int(100*(CD_in_bound)/(len(CL)))}% samples have {second_variable_name} within {int(band_1*100)}% relative error.')
 
     print(f'Averaged number of trials {np.average(total_design_number):.2f}, averaged percent of unfeasible designs {int(100*(np.sum(unfeasible_design_number))/(np.sum(total_design_number)))}%.')
 
@@ -926,8 +946,8 @@ def validation_accuracy(model_config_path, file_name, band = None, mode = None, 
     ax1.plot(np.linspace(CL_axis_lower_limit, CL_axis_upper_limit, 10), np.linspace(CL_axis_lower_limit, CL_axis_upper_limit, 10), c='r', ls='--', label = '100% Accuracy') # line with grad = 1
     # ax1.plot(np.linspace(CL_axis_lower_limit, CL_axis_upper_limit, 10), upper_band_grad*np.linspace(CL_axis_lower_limit, CL_axis_upper_limit, 10), c='r', ls=':', label = f'{int(band_1*100)}% band') # upperbound of 10% error
     # ax1.plot(np.linspace(CL_axis_lower_limit, CL_axis_upper_limit, 10), lower_band_grad*np.linspace(CL_axis_lower_limit, CL_axis_upper_limit, 10), c='r', ls=':') # lowerbound of 10% error
-    ax1.set_xlabel('Target $C_L$', fontsize = 14)
-    ax1.set_ylabel('Generated $C_L$', fontsize = 14)
+    ax1.set_xlabel(f'Target {first_variable_name_latex}', fontsize = 14)
+    ax1.set_ylabel(f'Generated {first_variable_name_latex}', fontsize = 14)
     ax1.set_xlim(CL_axis_lower_limit, CL_axis_upper_limit)
     ax1.set_ylim(CL_axis_lower_limit, CL_axis_upper_limit)
     ax1.tick_params(axis='both', which='major', labelsize=14)
@@ -962,8 +982,8 @@ def validation_accuracy(model_config_path, file_name, band = None, mode = None, 
     ax2.plot(np.linspace(CD_axis_lower_limit, CD_axis_upper_limit, 10), np.linspace(CD_axis_lower_limit, CD_axis_upper_limit, 10), c='r', ls='--') # line with grad = 1
     # ax2.plot(np.linspace(CD_axis_lower_limit, CD_axis_upper_limit, 10), upper_band_grad*np.linspace(CD_axis_lower_limit, CD_axis_upper_limit, 10), c='r', ls=':') # upperbound of 10% error
     # ax2.plot(np.linspace(CD_axis_lower_limit, CD_axis_upper_limit, 10), lower_band_grad*np.linspace(CD_axis_lower_limit, CD_axis_upper_limit, 10), c='r', ls=':') # lowerbound of 10% error
-    ax2.set_xlabel('Target $C_D$', fontsize = 14)
-    ax2.set_ylabel('Generated $C_D$', fontsize = 14)
+    ax2.set_xlabel(f'Target {second_variable_name_latex}', fontsize = 14)
+    ax2.set_ylabel(f'Generated {second_variable_name_latex}', fontsize = 14)
     ax2.set_xlim(CD_axis_lower_limit, CD_axis_upper_limit)
     ax2.set_ylim(CD_axis_lower_limit, CD_axis_upper_limit)
     ax2.tick_params(axis='both', which='major', labelsize=14)
@@ -976,8 +996,8 @@ def validation_accuracy(model_config_path, file_name, band = None, mode = None, 
     # bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
     plt.show()
 
-    print("CL best-fit-line gradient is:", m_cl)
-    print("CD best-fit-line gradient is:", m_cd)
+    print(f"{first_variable_name} best-fit-line gradient is:", m_cl)
+    print(f"{second_variable_name} best-fit-line gradient is:", m_cd)
     save_fig_custom(fig, file_path='fig', file_name=f'single_target_accuracy_plot_{mode}_{data_structure}', 
                     format_list=['.eps', '.png'], overwrite=True, dpi = 500)
 
@@ -1203,128 +1223,423 @@ def run_meanline(geometry, m_dot, omega, timeout=10):
         meanline.execution_impeller_outlet(m_dot, omega, 'Centrifugal')
         meanline.execution_vaneless_diffuser('Impeller', 'Centrifugal', m_dot)
         signal.alarm(0)
-        return meanline, True
+        return meanline.pressure_ratio, meanline.stage_eff
 
     except TimeoutException:
         print("Take too long for meanline to converge!")
-        return None, False
+        return 999, 999
 
     except Exception as e:
         signal.alarm(0)
         print('Meanline not converged')
-        return None, False
+        return 999, 999
 
 
 
 
 
-
-
-
-def validation_1D(device, sample_size, model, num_steps):
-    
-    
+def load_1D_dataset():
     df = pd.read_csv('dataset/1D_compressor_geometry_normalised.csv')
     min_max = pd.read_csv('dataset/1D_compressor_geometry_minmax.csv')
+    val_indices = np.load('dataset/1D_test_indices_proper_division.npy')
 
     if ("min" in min_max.columns) and ("max" in min_max.columns):
-        feature_col = min_max.columns[0]  # usually "Unnamed: 0"
-        if feature_col not in ["min", "max"]:
-            min_max = min_max.set_index(feature_col)
-
-    # Clean any whitespace issues in feature names
+        feature_col = min_max.columns[0]
+    if feature_col not in ["min", "max"]:
+        min_max = min_max.set_index(feature_col)
     min_max.index = min_max.index.astype(str).str.strip()
 
-    i = 234
-    
-    
-    pr_normalised = df.loc[i, 'pressure_ratio']
-    eta_normalised = df.loc[i, 'efficiency']
-    omega_normalised = df.loc[i, 'omega']
-    m_dot_normalised = df.loc[i, 'm_dot']
+    return df, min_max, val_indices
 
-    number_of_trials = 0
-    success = False
-    while not success and number_of_trials < 10:
-        cond = (torch.tensor([omega_normalised, m_dot_normalised, pr_normalised, eta_normalised]).to(device))
+
+
+def randomly_pick_1D_validation(manual_seed, sample_number):
+    
+    df, min_max, val_indices = load_1D_dataset()
+    
+    random.seed(manual_seed)
+    print('exe', manual_seed)
+    
+    numbers = random.sample(range(0, len(val_indices)), sample_number)
+
+    return numbers
+    
+
+
+def convert_1D_to_3D(multiple_design_geometry, compressor_code, convert_to_3D):
+    
+    
+    design_number = 1
+    for geometry in multiple_design_geometry:
+        compressor_path = f'/home/yg1922/Desktop/Yingfan_FYP_Code/Diffusion_based_2DAirfoil_Generation/generated_compressor_3D_geometry/compressor_{compressor_code}_design_{design_number}'
         
-        rnd = StackedRandomGenerator(device, range(sample_size))
-        latents = rnd.randn([sample_size, model.in_dim], device=device)
+        vaneless_diff_existence = True
+        splitter_existence = True
+        target_rake_angle = 10
+        pinching_ratio = 0.4
 
-
-        with torch.no_grad():
-            samples, _ = edm_sampler(model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
-
-        samples = samples.float()
-        sample = samples[0].cpu().numpy()
-
-        geom_cols = ['R_tip_1', 'R_mean_1', 'R_hub_1', 'beta_b1_hub', 'beta_b1_tip', 'beta_b1_mean', 
-                    'beta_b2', 'R_mean_2', 'b_2', 'L_z',  't', 'nblades', 'n_splitter_blades', 'b3', 'r3', 'slip_factor']
-
-
-        mins = min_max.loc[geom_cols, "min"].to_numpy(dtype=np.float32)
-        maxs = min_max.loc[geom_cols, "max"].to_numpy(dtype=np.float32)
-
-        denormalised_geometry = sample * (maxs + 0.0000000000000001 - mins) + mins
-
-        geometry  = {
-            'imp_type': 'Centrifugal', 
-            'P_01': 101325, 
-            'T_01': 288,
-            'R_tip_1': float(denormalised_geometry[0]), 
-            'R_mean_1': float(denormalised_geometry[1]), 
-            'R_hub_1': float(denormalised_geometry[2]),
-            'alpha_1': 0, 
-            'beta_b1_hub': float(denormalised_geometry[3]), 
-            'beta_b1_tip': float(denormalised_geometry[4]),
-            'beta_b1_mean': float(denormalised_geometry[5]),
-            'lambda_1': 1.0, 
-            'R_mean_2': float(denormalised_geometry[6]), 
-            'beta_b2': float(denormalised_geometry[7]),
-            'lambda_2': 1.0, 
-            'b_2': float(denormalised_geometry[8]), 
-            'L_z': float(denormalised_geometry[9]), 
-            't': float(denormalised_geometry[10]), 
-            's': 0.0003,
-            'nblades': round(denormalised_geometry[11]),
-            'n_splitter_blades': round(denormalised_geometry[12]),
-            'b3': float(denormalised_geometry[13]), 
-            'r3': float(denormalised_geometry[14]),
-            'slip_factor': float(denormalised_geometry[15])}
+        three_d_blade = Blade_Forming_3D(splitter_existence, target_rake_angle, compressor_path, geometry, vaneless_diff_existence, pinching_ratio, extreme_value_for_imp_inlet=-int(geometry['R_tip_1'] * 1000 * 2))
+        
+        with contextlib.redirect_stdout(open(os.devnull, 'w')): # to suppress all the print outs
+            three_d_blade.execute(convert_to_3D)
+        design_number += 1
 
 
 
-        m_dot = m_dot_normalised*(min_max.loc['m_dot', 'max']- min_max.loc['m_dot', 'min']) + min_max.loc['m_dot', 'min']
-        omega_original = omega_normalised*(min_max.loc['omega', 'max']- min_max.loc['omega', 'min']) + min_max.loc['omega', 'min']
 
-        PR_original = pr_normalised*(min_max.loc['pressure_ratio', 'max']- min_max.loc['pressure_ratio', 'min']) + min_max.loc['pressure_ratio', 'min']
-        eta_original = eta_normalised*(min_max.loc['efficiency', 'max']- min_max.loc['efficiency', 'min']) + min_max.loc['efficiency', 'min']
+def test_condition_1D(m_dot, RPM, pr, eta):
 
-        omega = (omega_original*60)/(2*np.pi)
+    omega = RPM * 2*np.pi / 60
+    df, min_max, val_indices = load_1D_dataset()
 
-        meanline, success = run_meanline(geometry, m_dot, omega)
+    pr_normalised = (pr - min_max.loc['pressure_ratio', 'min'])/(min_max.loc['pressure_ratio', 'max'] - min_max.loc['pressure_ratio', 'min'])
+    m_dot_normalised = (m_dot - min_max.loc['m_dot', 'min'])/(min_max.loc['m_dot', 'max'] - min_max.loc['m_dot', 'min'])
+    eta_normalised = (eta - min_max.loc['efficiency', 'min'])/(min_max.loc['efficiency', 'max'] - min_max.loc['efficiency', 'min'])
+    omega_normalised = (omega - min_max.loc['omega', 'min'])/(min_max.loc['omega', 'max'] - min_max.loc['omega', 'min'])
+    
+    return pr_normalised, m_dot_normalised, eta_normalised, omega_normalised
 
-        number_of_trials += 1
 
-    if success:
-        stage_pressure_ratio = meanline.pressure_ratio
-        stage_efficiency = meanline.stage_eff
-        work_coefficient = meanline.psi
-        print(f'mass flow rate: {m_dot} kg/s, RPM: {omega}')
-        print(f'Generated design pressure ratio: {stage_pressure_ratio}, efficiency {stage_efficiency}.' )
-        print(f'Original design pressure ratio: {PR_original}, efficiency {eta_original}.')
+
+def load_blade_curve(filename):
+    profiles = []
+    current_profile = []
+
+    with open(filename, "r") as f:
+        for index, line in enumerate(f):
+            line = line.strip()
+
+            # New profile marker
+            if line.startswith("#Profile"):
+                if current_profile:
+                    profiles.append(np.array(current_profile))
+                    current_profile = []
+                continue
+
+            # Skip comments / empty lines
+            if not line or line.startswith("#"):
+                continue
+
+            # Read coordinates
+            values = line.split()
+            if len(values) >= 3:
+                try:
+                    x = float(values[0])
+                    y = float(values[1])
+                    z = float(values[2])
+                except ValueError:
+                    print("ValueError line:", repr(line))
+                    continue
+
+                if not (np.isfinite(x) and np.isfinite(y) and np.isfinite(z)):
+                    # print('There is invalid value in line', index, 'skipped the invalid values!')
+                    pass
+                
+                else:
+                    current_profile.append([x, y, z])
+        # Append last profile
+        if current_profile:
+            profiles.append(np.array(current_profile))
+
+    return profiles
+
+
+
+
+
+def visualise_3D(compressor_code, m_dot, RPM, pr, eta, convert_to_3D, geometry):
+    
+    
+    if convert_to_3D:
+        main_blade_profiles = load_blade_curve(f"generated_compressor_3D_geometry/compressor_{compressor_code}/3D_blades_0.40/BladeMain.curve")
+        main_blade_profiles = [main_blade_profiles[0], main_blade_profiles[-1]]
+        splitter_blade_profiles = load_blade_curve(f"generated_compressor_3D_geometry/compressor_{compressor_code}/3D_blades_0.40/BladeSplitter.curve")
+    
+        all_points_main = np.vstack(main_blade_profiles)
+        x_main, y_main, z_main = all_points_main[:, 0], all_points_main[:, 1], all_points_main[:, 2]
+
+        all_points_splitter = np.vstack(main_blade_profiles)
+        x_splitter, y_splitter, z_splitter = all_points_splitter[:, 0], all_points_main[:, 1], all_points_main[:, 2]
+
+
+    # 3D view plotting
+    # fig = plt.figure(figsize=(10, 8))
+    # ax = fig.add_subplot(111, projection="3d")
+
+    # for profile in main_blade_profiles:
+    #     ax.scatter(profile[:, 0], profile[:, 1], profile[:, 2], color="k", s=1)
+        
+    # ax.set_xlabel("X (mm)")
+    # ax.set_ylabel("Y (mm)")
+    # ax.set_zlabel("Z (mm)")
+    # ax.view_init(elev=25, azim=135) 
+    # plt.tight_layout()
+
+    fig, ax = plt.subplots()
+    fig2, ax2 = plt.subplots()
+    fig3, ax3 = plt.subplots()
+    cmap = plt.get_cmap("tab10")
+
+    for design_number in range(len(geometry)):
+
+        case = f'generated_compressor_3D_geometry/compressor_{compressor_code}_design_{design_number+1}/Main_Blades/casing.dat'
+        hub = f'generated_compressor_3D_geometry/compressor_{compressor_code}_design_{design_number+1}/Main_Blades/hub.dat'
+        thickness = f'generated_compressor_3D_geometry/compressor_{compressor_code}_design_{design_number+1}/Main_Blades/thickness.dat'
+        beta = f'generated_compressor_3D_geometry/compressor_{compressor_code}_design_{design_number+1}/Main_Blades/beta.dat'
+
+        case = np.loadtxt(case)
+        meridional_tip_x, meridional_tip_r = case[:, 0], case[:, 1]
+
+        hub = np.loadtxt(hub)
+        meridional_hub_x, meridional_hub_r = hub[:, 0], hub[:, 1]
+
+        thickness = np.loadtxt(thickness, skiprows=2)
+        thickness_meridional, thickness_hub, thickness_tip = thickness[:, 0], thickness[:, 1], thickness[:, 2]
+
+        beta = np.loadtxt(beta, skiprows=2)
+        beta_meridional, beta_hub, beta_tip = beta[:, 0], beta[:, 1], beta[:, 2]
+
+
+
+        # meridional view plotting
+        
+        color = cmap((design_number+1) % 10)
+
+        ax.plot(meridional_tip_x, meridional_tip_r, color = color)
+        ax.plot(meridional_hub_x, meridional_hub_r, color = color) 
+        ax.set_xlabel('Axial (mm)')
+        ax.set_ylabel('Radial (mm)')
+        ax.grid(True, ls = ':')
+        ax.text(0.27, 0.90, fr'$\dot{{m}}$: {m_dot:.2f} Kg/s   '
+                f"RPM: {int(RPM)} \n"
+                f"PR: {pr:.2f}   "
+                f"$\eta$: {eta:.2f}",
+                transform=ax.transAxes,
+                fontsize=14,
+                verticalalignment='center',
+                horizontalalignment='center',
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.65))
+        ax.axis('equal')
+        
+        
+        
+        ax2.plot(thickness_meridional, thickness_hub, color = color)
+        ax2.plot(thickness_meridional, thickness_tip, color = color) 
+        ax2.set_xlabel('Axial (mm)')
+        ax2.set_ylabel('Thickness (mm)')
+        ax2.grid(True, ls = ':')
+
+        
+        ax3.plot(beta_meridional, beta_hub, color = color)
+        ax3.plot(beta_meridional, beta_tip, color = color) 
+        ax3.set_xlabel('Axial (mm)')
+        ax3.set_ylabel('Metal Angle (deg)')
+        ax3.grid(True, ls = ':')
+        
+    plt.show()
+
+
+
+def off_design_plot_1D(multi_design_geometry, m_dot_design_point, omega, pr_design, eta_design):
+
+    fig, ax = plt.subplots()
+    fig2, ax2 = plt.subplots()
+    cmap = plt.get_cmap("tab10")
+    ax.scatter(m_dot_design_point, pr_design, marker='*', s= 50, c = 'r', zorder = 5, label = 'Design Point')
+    ax2.scatter(m_dot_design_point, eta_design, marker='*', s= 50, c = 'r', zorder = 5, label = 'Design Point')
+    
+    for design_number, geometry in enumerate(multi_design_geometry):
+        
+        color = cmap((design_number+1) % 10)
+        pr_list = []
+        eta_list = []
+        m_dot_list_2 = [] # to ensure same length as pr and eta lists
+        m_dot_list = np.linspace(0.07, 0.12, 20)
+
+
+        for m_dot in m_dot_list:
+            pr, eta = run_meanline(geometry, m_dot, omega, 5)
+
+            if pr != 999:
+                m_dot_list_2.append(m_dot)
+                pr_list.append(pr)
+                eta_list.append(eta)
+
+        
+        
+        ax.plot(m_dot_list_2, pr_list, color = color, zorder = 1)
+        ax.set_xlabel('Mass Flow Rate (kg/s)')
+        ax.set_ylabel('Pressure Ratio')
+        ax.set_xlim(0.07, 0.12)
+        ax.set_ylim(1,4.5)
+        ax.grid(True, ls = ':')
+        ax.legend()
+
+
+        
+        ax2.plot(m_dot_list_2, eta_list, color = color, zorder = 1)
+        ax2.set_xlabel('Mass Flow Rate (kg/s)')
+        ax2.set_ylabel('Total Efficiency')
+        ax2.set_xlim(0.07, 0.12)
+        ax2.set_ylim(0.7, 0.9)
+        ax2.grid(True, ls = ':')
+        ax2.legend()
+    plt.show()
+
+
+
+def validation_1D(mode, device, sample_number, model, num_steps, manual_seed, multiple_design, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration, 
+                  m_dot, RPM, eta, pr, convert_to_3D, plot_blade_distribution):
+    
+    model.eval()
+    df, min_max, val_indices = load_1D_dataset()
+    
+    pr_tolerance = CL_tolerence
+    eta_tolerance = CD_tolerence
+
+    if mode == 'validation':
+        numbers = randomly_pick_1D_validation(manual_seed, sample_number)
     else:
-        print(f'Cannot generate feasible geometry after {number_of_trials}.')
+        numbers = [0]
+
+    for idx in numbers:
+        
+        multiple_design_geometry = []
+        if mode == 'validation':
+            i = val_indices[idx]
+            pr_normalised = df.loc[i, 'pressure_ratio']
+            eta_normalised = df.loc[i, 'efficiency']
+            omega_normalised = df.loc[i, 'omega']
+            m_dot_normalised = df.loc[i, 'm_dot']
+        else:
+            pr_normalised, m_dot_normalised, eta_normalised, omega_normalised = test_condition_1D(m_dot, RPM, pr, eta)
+
+        design = 0
+        
+        while design < multiple_design:
+
+            number_of_trials = 1
+            success = False
+
+            geometry_list = []
+            pr_error_list = []
+            eta_error_list = []
+            pr_list = []
+            eta_list = []
+
+            while not success and number_of_trials < max_iteration:
+                cond = (torch.tensor([m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised]).to(device))
+                
+                rnd = StackedRandomGenerator(device, range(sample_number))
+                latents = rnd.randn([sample_number, model.in_dim], device=device)
+
+                with torch.no_grad():
+                    samples, _ = edm_sampler(model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
+
+                samples = samples.float()
+                sample = samples[0].cpu().numpy()
+
+                geom_cols = ['R_tip_1', 'R_mean_1', 'R_hub_1', 'beta_b1_hub', 'beta_b1_tip', 'beta_b1_mean', 
+                            'beta_b2', 'R_mean_2', 'b_2', 'L_z',  't', 'nblades', 'n_splitter_blades', 'b3', 'r3', 'slip_factor']
+
+                deviation =  0.0000000000000001
+
+                mins = min_max.loc[geom_cols, "min"].to_numpy(dtype=np.float32)
+                maxs = min_max.loc[geom_cols, "max"].to_numpy(dtype=np.float32)
 
 
+                denormalised_geometry = sample * (maxs + deviation - mins) + mins
+
+                geometry  = {
+                    'imp_type': 'Centrifugal', 
+                    'P_01': 101325, 
+                    'T_01': 288,
+                    'R_tip_1': float(denormalised_geometry[0]), 
+                    'R_mean_1': float(denormalised_geometry[1]), 
+                    'R_hub_1': float(denormalised_geometry[2]),
+                    'alpha_1': 0, 
+                    'beta_b1_hub': float(denormalised_geometry[3]), 
+                    'beta_b1_tip': float(denormalised_geometry[4]),
+                    'beta_b1_mean': float(denormalised_geometry[5]),
+                    'lambda_1': 1.0,
+                    'beta_b2': float(denormalised_geometry[6]),
+                    'R_mean_2': float(denormalised_geometry[7]), 
+                    'lambda_2': 1.0, 
+                    'b_2': float(denormalised_geometry[8]), 
+                    'L_z': float(denormalised_geometry[9]), 
+                    't': float(denormalised_geometry[10]), 
+                    's': 0.0003,
+                    'nblades': math.ceil(denormalised_geometry[11]),
+                    'n_splitter_blades': math.ceil(denormalised_geometry[11])/2, # ensure equal number of main and splitter blades
+                    'b3': float(denormalised_geometry[13]), 
+                    'r3': float(denormalised_geometry[14]),
+                    'slip_factor': float(denormalised_geometry[15])}
+
+                m_dot = m_dot_normalised*(min_max.loc['m_dot', 'max'] + deviation - min_max.loc['m_dot', 'min']) + min_max.loc['m_dot', 'min']
+                omega = omega_normalised*(min_max.loc['omega', 'max'] + deviation - min_max.loc['omega', 'min']) + min_max.loc['omega', 'min']
+
+                pr_original = pr_normalised*(min_max.loc['pressure_ratio', 'max'] + deviation - min_max.loc['pressure_ratio', 'min']) + min_max.loc['pressure_ratio', 'min']
+                eta_original = eta_normalised*(min_max.loc['efficiency', 'max'] + deviation - min_max.loc['efficiency', 'min']) + min_max.loc['efficiency', 'min']
+
+                RPM = (omega*60)/(2*np.pi)
+
+                pr, eta = run_meanline(geometry, m_dot, omega, x_foil_timeout)
+
+                number_of_trials += 1
 
 
+                pr_error = 100*abs(pr - pr_original) / (pr_original)
+                eta_error = 100*abs(eta - eta_original) / (eta_original)
+                
+                pr_error_list.append(pr_error)
+                eta_error_list.append(eta_error)
+                pr_list.append(pr)
+                eta_list.append(eta)
+                geometry_list.append(geometry)
+
+
+                if pr_error < pr_tolerance and eta_error < eta_tolerance:
+                    print(f'Number {design+1} design took {number_of_trials} trials.')
+                    print(f'Pressure ratio {pr} has relative error {pr_error}% compared to {pr_original}.')
+                    print(f'Efficiency {eta} has relative error {eta_error}% compared to {eta_original}. ')
+                    success = True
+            design += 1
+
+            if number_of_trials == max_iteration:
+
+                index = pr_error_list.index(min(pr_error_list))
+
+                geometry = geometry_list[index]
+                pr = pr_list[index]
+                eta = eta_list[index]
+                pr_error = pr_error_list[index]
+                eta_error = eta_error_list[index]
+                print(f'Number {design} design cannot satisfy the tolerance after {number_of_trials} trails.')
+                print(f'Using the best design: pressure ratio {pr} has relative error {pr_error}% compared to {pr_original}.')
+                print(f'Efficiency {eta} has relative error {eta_error}% compared to {eta_original}. ')
+                print(f'The best geometry: {geometry}')
+            
+            multiple_design_geometry.append(geometry)
+            print(geometry)
+            print(m_dot, omega)
+
+        
+        if plot_blade_distribution:
+            
+            compressor_code = f'{m_dot:.2f}_{int(RPM)}_{pr_original:.2f}_{eta_original:.2f}'
+            print(f'Plotting the blade distribution. Compressor code: {compressor_code}')
+            if convert_1D_to_3D:
+                print('Converting from 1D to 3D.')
+            convert_1D_to_3D(multiple_design_geometry, compressor_code, convert_to_3D)
+            visualise_3D(compressor_code, m_dot, RPM, pr_original, eta_original, convert_to_3D, multiple_design_geometry)
+            off_design_plot_1D(multiple_design_geometry, m_dot, omega, pr, eta)
 
 
 def model_deployment(mode, model_config_path, sample_number=1, AOA=None, Ma=None, Re=None, CL=None, CD=None, 
                      num_steps = None, fig_size = None, manual_seed = None, lim = 0.5, multiple_design = 1, 
                      x_foil_timeout=20, CL_tolerence = 0.01, CD_tolerence = 0.05, max_iteration = 100,
-                     distribution_plot_switch = False, off_design_plot_switch = False):
+                     distribution_plot_switch = False, off_design_plot_switch = False, m_dot = None, RPM = None, 
+                     pr = None, eta = None, convert_to_3D = False, plot_blade_distribution = True):
     with open(model_config_path, "r") as f:
         model_config = yaml.safe_load(f)
 
@@ -1411,7 +1726,8 @@ def model_deployment(mode, model_config_path, sample_number=1, AOA=None, Ma=None
                         CD_tolerence, max_iteration, distribution_plot_switch, off_design_plot_switch, Re, Ma, AOA, CL, CD)
     
     elif data_structure == '1D_params':
-        validation_1D(device, sample_number, model, num_steps)
+        validation_1D(mode, device, sample_number, model, num_steps, manual_seed, multiple_design, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration,
+                      m_dot, RPM, eta, pr, convert_to_3D, plot_blade_distribution)
 
 
 
@@ -1545,6 +1861,7 @@ def visualise_the_extrapolation_testing_set():
     save_fig_custom(fig, file_path='fig', file_name=f'aerodynamic_extrapolation_results', overwrite=True, dpi = 500)
 
 
+
 def find_the_most_popular_flow_condition():
     all = pd.read_csv('dataset/aerofoil_data_clean.csv')
     AOA_list = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
@@ -1563,3 +1880,101 @@ def find_the_most_popular_flow_condition():
     # print(count)
     max_item = max(count.items(), key=lambda x: x[1])
     print(max_item)
+
+
+def find_the_most_popular_flow_condition_1D():
+    all = pd.read_csv('dataset/1D_compressor_geometry.csv')
+    m_dot_list = np.linspace(0.07, 0.12, 5)
+    RPM_list = np.linspace(70000, 90000, 5)
+
+    count = {}
+
+    all['m_dot'] = all['m_dot'].round(2)
+    all['omega'] = all['omega'].astype(int)
+
+    for m_dot in m_dot_list:
+        for RPM in RPM_list:
+            omega = RPM * 2 * np.pi/60
+            sub_df = all[(all['m_dot'] == round(m_dot, 2)) &
+                         (all['omega'] == int(omega))]
+            count[f'{round(m_dot, 2)}_{int(omega)}'] = len(sub_df)
+
+    max_item = max(count.items(), key=lambda x: x[1])
+    print(max_item)
+
+
+
+def extrapolation_test_set_generation_1D():
+    
+    df = pd.read_csv("dataset/1D_compressor_geometry.csv")
+    val_indices = np.load("dataset/1D_val_indices_proper_division.npy")
+    train_indices = np.load("dataset/1D_train_indices_proper_division.npy")
+    test_indices = np.load("dataset/1D_train_indices_proper_division.npy")
+
+    df_train = df
+    
+
+    m_dot = 0.07
+    omega = 7330
+
+    df_train = df_train[(df_train['m_dot'] == round(m_dot, 2)) &
+                        (df_train['omega'].astype(int) == int(omega))]
+
+    extrapolation = []
+
+    for _, row in tqdm(df_train.iterrows()):
+        pr = row['pressure_ratio']
+        eta = row['efficiency']
+
+        df_pr = df_train[abs(df_train['pressure_ratio'] - pr) <= 0.03]
+        
+        max_eta = df_pr['efficiency'].max()
+
+        row = {'m_dot': m_dot, 'omega': omega, 'pr': pr, 'eta': eta}
+        
+        if max_eta <= eta:
+            extrapolation.append(row)
+
+    columns = ['m_dot', 'omega', 'pr', 'eta']
+
+    pd.DataFrame(extrapolation, columns=columns).to_csv('extrapolation_1D.csv', index=False)
+
+
+
+def visualise_the_extrapolation_testing_set_1D():
+    train_indices = np.load("dataset/1D_train_indices_proper_division.npy")
+
+    extrapolation = pd.read_csv('extrapolation_1D.csv')#.sample(n=100, random_state=123)
+    all = pd.read_csv('dataset/1D_compressor_geometry.csv').loc[train_indices]
+
+    # change this line 
+    param_results = pd.read_csv('mdl_validation/1D_params_ResNet_UNet_64_5_4_with_1000_epochs_extrapolation.csv')
+
+
+    m_dot = 0.07
+    omega = 7330
+
+
+    all = all[(all['m_dot'] == round(m_dot, 2)) &
+              (all['omega'].astype(int) == int(omega))]
+
+
+    fig, ax = plt.subplots()
+    print(len(extrapolation['pr']))
+    ax.scatter(all['pressure_ratio'], all['efficiency'], s=1, color = 'grey', label = 'training data')
+    ax.scatter(extrapolation['pr'], extrapolation['eta'], s=10, color = 'b', label = 'Pareto front')
+
+
+
+        
+    ax.scatter(param_results['pr_actual'], param_results['eta_actual'], marker = 'o', color = 'r', s = 10, label = 'Optimised')
+        
+  
+    ax.set_xlabel("Pressure Ratio", fontsize = 14)
+    ax.set_ylabel("Efficiency ($\eta$)", fontsize = 14)
+    ax.set_xlim(1, 3)
+    ax.set_ylim(0.6, 0.9)
+    ax.legend(loc = 'upper right', fontsize = 12)
+    ax.tick_params(axis='both', which='major', labelsize=14)
+    plt.show()
+    save_fig_custom(fig, file_path='fig', file_name=f'aerodynamic_extrapolation_results', overwrite=True, dpi = 500)

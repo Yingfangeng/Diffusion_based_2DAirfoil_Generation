@@ -21,4 +21,6 @@ frames/*
 sdf_matrix/*
 mdl_weight/*
 fig/*
-*.curve
+*.exe
+generated_compressor_3D_geometry/*
+*.dat

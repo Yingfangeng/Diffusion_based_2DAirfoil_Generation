@@ -401,7 +401,6 @@ if __name__ == '__main__':
         R_mean_2 = df['R_mean_2'].to_numpy()
         b_2 = df['b_2'].to_numpy()
         L_z = df['L_z'].to_numpy()
-        s = df['s'].to_numpy()
         t = df['t'].to_numpy()
         nblades = df['nblades'].to_numpy()
         n_splitter_blades = df['n_splitter_blades'].to_numpy()
@@ -413,7 +412,6 @@ if __name__ == '__main__':
         omega = df['omega'].to_numpy()
         pressure_ratio = df['pressure_ratio'].to_numpy()
         efficiency = df['efficiency'].to_numpy()
-        
         
         coordinates = []
         cond_data = []
@@ -431,14 +429,44 @@ if __name__ == '__main__':
 
     dataset = Aerofoil_Dataset(coordinates, cond_data, name, mode)
     print('passed dataset initialisation')
-    generator = torch.Generator().manual_seed(0)
+
+    # generator = torch.Generator().manual_seed(0)
+    # n = len(dataset)
+    # n_train = int(train_val_division * n)
+    # train_set, val_set = torch.utils.data.random_split(dataset, [n_train, n - n_train], generator=generator)
+    # print('passed data division')
+    # np.save("dataset/1D_val_indices.npy", val_set.indices)
+    # np.save("dataset/1D_train_indices.npy", train_set.indices)
+
+
+
+    seed = 0
     n = len(dataset)
 
-    n_train = int(train_val_division * n)
-    train_set, val_set = torch.utils.data.random_split(dataset, [n_train, n - n_train], generator=generator)
-    print('passed data division')
-    # np.save("dataset/val_indices_clean.npy", val_set.indices)
-    # np.save("dataset/train_indices_clean.npy", train_set.indices)
+    rng = np.random.default_rng(seed)
+    all_indices = np.arange(n)
+    rng.shuffle(all_indices)
+
+    n_train = int(0.8 * n)
+    n_val   = int(0.1 * n)
+    n_test  = n - n_train - n_val  # ensures total == n even if n not divisible by 10
+
+    train_indices = all_indices[:n_train]
+    val_indices   = all_indices[n_train:n_train + n_val]
+    test_indices  = all_indices[n_train + n_val:]
+
+    train_set = torch.utils.data.Subset(dataset, train_indices.tolist())
+    val_set   = torch.utils.data.Subset(dataset, val_indices.tolist())
+    test_set  = torch.utils.data.Subset(dataset, test_indices.tolist())
+
+    print("passed data division")
+    print(len(train_set), len(val_set), len(test_set))
+
+    # ---- (optional) save indices for exact restoration later ----
+    # np.save("dataset/1D_train_indices_proper_division.npy", train_indices)
+    # np.save("dataset/1D_val_indices_proper_division.npy", val_indices)
+    # np.save("dataset/1D_test_indices_proper_division.npy", test_indices)
+
 
     Training = True
     
@@ -446,6 +474,8 @@ if __name__ == '__main__':
     # load the data set
     train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True)
     val_loader = torch.utils.data.DataLoader(val_set, batch_size=batch_size, shuffle=True)
+    # test_loader  = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False)
+
     print('passed data loader')
     # load the model
     model = EDM_CFG(num_components, num_components, cond_size=cond_size, model_channel=model_channel,
