@@ -114,6 +114,13 @@ class Aerofoil_Dataset(Dataset):
 
             return torch.FloatTensor(sdf), torch.FloatTensor(cond_data)
 
+        elif self.mode == '3D_coordinates':
+            name_label = self.name[idx]
+            cond_data = self.cond_data[idx]
+            coordinates = self.coordinates[name_label]
+            return torch.tensor(coordinates, dtype=torch.float32), torch.tensor(cond_data, dtype=torch.float32)
+
+
 
         else:
             coordinates = self.coordinates[idx]
@@ -288,6 +295,53 @@ def load_checkpoint(path, model, optimizer=None, scheduler=None, device='cpu'):
 
 
 
+def load_blade_curve(filename):
+    profiles = []
+    current_profile = []
+
+    with open(filename, "r") as f:
+        for index, line in enumerate(f):
+            line = line.strip()
+
+            # New profile marker
+            if line.startswith("#Profile"):
+                if current_profile:
+                    profiles.append(np.array(current_profile))
+                    current_profile = []
+                continue
+
+            # Skip comments / empty lines
+            if not line or line.startswith("#"):
+                continue
+
+            # Read coordinates
+            values = line.split()
+            if len(values) >= 3:
+                try:
+                    x = float(values[0])
+                    y = float(values[1])
+                    z = float(values[2])
+                except ValueError:
+                    print("ValueError line:", repr(line))
+                    continue
+
+                if not (np.isfinite(x) and np.isfinite(y) and np.isfinite(z)):
+                    # print('There is invalid value in line', index, 'skipped the invalid values!')
+                    pass
+
+                else:
+                    current_profile.append([x, y, z])
+        # Append last profile
+        if current_profile:
+            profiles.append(np.array(current_profile))
+
+    return profiles
+
+
+
+
+
+
 
 #======================== The Main Function ==========================
 
@@ -325,13 +379,16 @@ if __name__ == '__main__':
     train_val_division = model_config['train_val_division'] # the percentage of training data in the dataset
     device=model_config['device']
     nn_structure=model_config['neural_network_sturcture']
+    reduced_data_fraction=model_config['reduced_data_fraction']
     # condition = model_config['condition']
-    model_code = f"./mdl_weight/{data_structure}_{nn_structure}_{model_channel}_{model_layer}_{len(model_channel_multiplication)}_with_{num_epochs}_epochs_resume"
-    save_path = f"{model_code}_1D_test.pth"
+    model_code = f"./mdl_weight/{data_structure}_{nn_structure}_{model_channel}_{model_layer}_{len(model_channel_multiplication)}_with_{num_epochs}_epochs_{reduced_data_fraction}_data_resume"
+    save_path = f"{model_code}.pth"
     check_point_path = f"{model_code}_check_point.pth"
     print(f'The model weight will be saved to path {save_path}')
+    print(f'This training use only {int(reduced_data_fraction*100)} of the entire dataset!')
     combined_coordinates = []
     cond_data = []
+
 
 
     if data_structure != '1D_params':
@@ -415,6 +472,7 @@ if __name__ == '__main__':
         
         coordinates = []
         cond_data = []
+        
 
         for i in range(len(df)):
             coordinates.append([R_tip_1[i], R_mean_1[i], R_hub_1[i], beta_b1_hub[i], beta_b1_tip[i], beta_b1_mean[i], 
@@ -423,6 +481,27 @@ if __name__ == '__main__':
             cond_data.append([m_dot[i], omega[i], pressure_ratio[i], efficiency[i]])
         
         cond_size = len(cond_data[0])
+
+    elif data_structure == '3D_coordinates':
+        num_components = int(model_config['component_number'])
+        curve_file = model_config['curve_file_path']
+        mode = '3D_coordinates'
+
+        coordinates = {}
+        unique_names = df['compressor_index'].unique()
+
+        for i in unique_names:
+            try: 
+                profile = load_blade_curve(f'{curve_file}/compressor_{i}/3D_geometry/3D_blades_0.40/BladeMain.curve')
+                coordinate = np.concatenate(profile).ravel()
+                coordinates[i] = coordinate
+                df = df[df['compressor_index'] == 5]
+                for _, row in df.iterrows():
+                    cond_data.append([row['m_dot'], row['omega'], row['pressure_ratio'], row['efficiency']])
+            except FileNotFoundError:
+                continue
+        coordinates = np.array(coordinates)
+    
 
     else:
         raise NotImplementedError
@@ -455,6 +534,17 @@ if __name__ == '__main__':
     val_indices   = all_indices[n_train:n_train + n_val]
     test_indices  = all_indices[n_train + n_val:]
 
+    train_frac = reduced_data_fraction
+    val_frac = reduced_data_fraction
+    test_frac = reduced_data_fraction
+
+    rng = np.random.default_rng(seed)
+
+    train_indices = rng.choice(train_indices, size=int(train_frac * len(train_indices)), replace=False)
+    val_indices   = rng.choice(val_indices,   size=int(val_frac   * len(val_indices)),   replace=False)
+    test_indices  = rng.choice(test_indices,  size=int(test_frac  * len(test_indices)),  replace=False)
+
+
     train_set = torch.utils.data.Subset(dataset, train_indices.tolist())
     val_set   = torch.utils.data.Subset(dataset, val_indices.tolist())
     test_set  = torch.utils.data.Subset(dataset, test_indices.tolist())
@@ -462,7 +552,7 @@ if __name__ == '__main__':
     print("passed data division")
     print(len(train_set), len(val_set), len(test_set))
 
-    # ---- (optional) save indices for exact restoration later ----
+    # Save the dataset division indices
     # np.save("dataset/1D_train_indices_proper_division.npy", train_indices)
     # np.save("dataset/1D_val_indices_proper_division.npy", val_indices)
     # np.save("dataset/1D_test_indices_proper_division.npy", test_indices)

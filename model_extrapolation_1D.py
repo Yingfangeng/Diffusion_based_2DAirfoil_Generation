@@ -83,7 +83,7 @@ def validation_1D(device, sample_percent, model, num_steps, manual_seed, multipl
         while design < multiple_design:
 
             pr_original = df.loc[i, 'pr']
-            eta_original = df.loc[i, 'eta'] + 0.01
+            eta_original = df.loc[i, 'eta'] + 0.02
             omega = df.loc[i, 'omega']
             m_dot = df.loc[i, 'm_dot']
 

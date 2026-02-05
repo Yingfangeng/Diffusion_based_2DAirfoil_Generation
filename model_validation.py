@@ -514,7 +514,8 @@ def model_deployment( model_config_path, sample_percent, num_steps = None,  manu
     model_channel_multiplication = model_config['model_channel_multiplication']
     device=model_config['device']
     nn_structure=model_config['neural_network_sturcture']
-    model_code = f"{data_structure}_{nn_structure}_{model_channel}_{model_layer}_{len(model_channel_multiplication)}_with_{num_epochs}_epochs"
+    data_reduction_fraction = model_config['reduced_data_fraction']
+    model_code = f"{data_structure}_{nn_structure}_{model_channel}_{model_layer}_{len(model_channel_multiplication)}_with_{num_epochs}_epochs_{data_reduction_fraction}_data"
     save_path = f"mdl_weight/{model_code}.pth"
     print('Model Code', model_code)
     num_components=model_config['component_number']
@@ -590,5 +591,5 @@ if __name__ == "__main__":
     parser.add_argument("config", type=str, help="Path to the YAML config file")
     args = parser.parse_args()
     config_file = args.config
-    model_deployment( config_file, sample_percent = 0.01, num_steps = 30,  manual_seed = 123,
-                     x_foil_timeout=5, CL_tolerence = 0.01, CD_tolerence = 0.05, max_iteration = 100, mode = 'trivial')
+    model_deployment( config_file, sample_percent = 0.2, num_steps = 100,  manual_seed = 123,
+                     x_foil_timeout=5, CL_tolerence = 0.01, CD_tolerence = 0.01, max_iteration = 100, mode = 'intermediate')
