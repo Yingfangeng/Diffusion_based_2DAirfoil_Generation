@@ -24,3 +24,4 @@ fig/*
 *.exe
 generated_compressor_3D_geometry/*
 *.dat
+*.curve

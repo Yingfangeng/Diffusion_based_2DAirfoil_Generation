@@ -121,7 +121,6 @@ class Aerofoil_Dataset(Dataset):
             return torch.tensor(coordinates, dtype=torch.float32), torch.tensor(cond_data, dtype=torch.float32)
 
 
-
         else:
             coordinates = self.coordinates[idx]
             cond_data = self.cond_data[idx]
@@ -298,7 +297,7 @@ def load_checkpoint(path, model, optimizer=None, scheduler=None, device='cpu'):
 def load_blade_curve(filename):
     profiles = []
     current_profile = []
-
+    profile_has_error = False
     with open(filename, "r") as f:
         for index, line in enumerate(f):
             line = line.strip()
@@ -322,10 +321,12 @@ def load_blade_curve(filename):
                     y = float(values[1])
                     z = float(values[2])
                 except ValueError:
-                    print("ValueError line:", repr(line))
+                    profile_has_error = True
+                    # print("ValueError line:", repr(line))
                     continue
 
                 if not (np.isfinite(x) and np.isfinite(y) and np.isfinite(z)):
+                    profile_has_error = True
                     # print('There is invalid value in line', index, 'skipped the invalid values!')
                     pass
 
@@ -335,7 +336,7 @@ def load_blade_curve(filename):
         if current_profile:
             profiles.append(np.array(current_profile))
 
-    return profiles
+    return profiles, profile_has_error
 
 
 
@@ -382,16 +383,16 @@ if __name__ == '__main__':
     reduced_data_fraction=model_config['reduced_data_fraction']
     # condition = model_config['condition']
     model_code = f"./mdl_weight/{data_structure}_{nn_structure}_{model_channel}_{model_layer}_{len(model_channel_multiplication)}_with_{num_epochs}_epochs_{reduced_data_fraction}_data_resume"
-    save_path = f"{model_code}.pth"
+    save_path = f"{model_code}_3D_test.pth"
     check_point_path = f"{model_code}_check_point.pth"
     print(f'The model weight will be saved to path {save_path}')
-    print(f'This training use only {int(reduced_data_fraction*100)} of the entire dataset!')
+    print(f'This training uses {int(reduced_data_fraction*100)}% of the entire dataset')
     combined_coordinates = []
     cond_data = []
 
 
 
-    if data_structure != '1D_params':
+    if data_structure != '1D_params' and data_structure != '3D_coordinates':
         for _, row in df.iterrows():
             x_coords = np.fromstring(row["x"].strip("[]"), sep=" ")
             y_coords = np.fromstring(row["y"].strip("[]"), sep=" ")
@@ -488,20 +489,28 @@ if __name__ == '__main__':
         mode = '3D_coordinates'
 
         coordinates = {}
-        unique_names = df['compressor_index'].unique()
+        unique_names = df['geometry_index'].unique()
+
+        name = []
 
         for i in unique_names:
             try: 
-                profile = load_blade_curve(f'{curve_file}/compressor_{i}/3D_geometry/3D_blades_0.40/BladeMain.curve')
-                coordinate = np.concatenate(profile).ravel()
-                coordinates[i] = coordinate
-                df = df[df['compressor_index'] == 5]
-                for _, row in df.iterrows():
-                    cond_data.append([row['m_dot'], row['omega'], row['pressure_ratio'], row['efficiency']])
+                profile, profile_has_error = load_blade_curve(f'{curve_file}/compressor_{i}.curve')
+                
+                if not profile_has_error:
+                    coordinate = np.concatenate(profile).ravel()
+                    compressor_name = f'compressor_{i}'
+                    coordinates[compressor_name] = coordinate
+                    df_2 = df[df['geometry_index'] == i]
+                    
+                    for _, row in df_2.iterrows():
+                        cond_data.append([row['m_dot'], row['omega'], row['pressure_ratio'], row['efficiency']])
+                        name.append(compressor_name)
+            
             except FileNotFoundError:
                 continue
-        coordinates = np.array(coordinates)
-    
+
+        cond_size = len(cond_data[0])
 
     else:
         raise NotImplementedError
@@ -645,7 +654,7 @@ if __name__ == '__main__':
                     c_val = c_val.to(device)
 
                     tmp_loss = loss_fn(model, x_val, c_val)
-                    loss = tmp_loss.sum().mul(1/x_val.shape[0])                    
+                    loss = tmp_loss.sum().mul(1/x_val.shape[0])
                     val_loss += loss.item() * x_val.size(0)
 
             val_loss /= len(val_loader.dataset)

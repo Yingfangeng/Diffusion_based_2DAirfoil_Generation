@@ -122,6 +122,9 @@ class Conv1DResNetUNetCFG(nn.Module):
         elif data_structure == 'pca' or '1D_params':
             self.in_channels = 1
             self.num_points = number_of_pc
+        elif data_structure == '3D_coordinates':
+            self.in_channels = 3
+            self.num_points = in_dim // 3
         else:
             raise NotImplementedError
 
