@@ -118,6 +118,7 @@ class Aerofoil_Dataset(Dataset):
             name_label = self.name[idx]
             cond_data = self.cond_data[idx]
             coordinates = self.coordinates[name_label]
+
             return torch.tensor(coordinates, dtype=torch.float32), torch.tensor(cond_data, dtype=torch.float32)
 
 
@@ -383,7 +384,7 @@ if __name__ == '__main__':
     reduced_data_fraction=model_config['reduced_data_fraction']
     # condition = model_config['condition']
     model_code = f"./mdl_weight/{data_structure}_{nn_structure}_{model_channel}_{model_layer}_{len(model_channel_multiplication)}_with_{num_epochs}_epochs_{reduced_data_fraction}_data_resume"
-    save_path = f"{model_code}_3D_test.pth"
+    save_path = f"{model_code}_3D_debug.pth"
     check_point_path = f"{model_code}_check_point.pth"
     print(f'The model weight will be saved to path {save_path}')
     print(f'This training uses {int(reduced_data_fraction*100)}% of the entire dataset')
@@ -484,6 +485,7 @@ if __name__ == '__main__':
         cond_size = len(cond_data[0])
 
     elif data_structure == '3D_coordinates':
+        normalised_df = pd.read_csv('dataset/1D_compressor_geometry_normalised.csv')
         num_components = int(model_config['component_number'])
         curve_file = model_config['curve_file_path']
         mode = '3D_coordinates'
@@ -501,7 +503,8 @@ if __name__ == '__main__':
                     coordinate = np.concatenate(profile).ravel()
                     compressor_name = f'compressor_{i}'
                     coordinates[compressor_name] = coordinate
-                    df_2 = df[df['geometry_index'] == i]
+                    idx = df[df['geometry_index'] == i].index
+                    df_2 = normalised_df.loc[idx]
                     
                     for _, row in df_2.iterrows():
                         cond_data.append([row['m_dot'], row['omega'], row['pressure_ratio'], row['efficiency']])

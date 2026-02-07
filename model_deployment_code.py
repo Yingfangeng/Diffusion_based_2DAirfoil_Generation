@@ -20,6 +20,7 @@ import time
 from meanline.meanline import *
 import signal
 import contextlib
+from contextlib import redirect_stdout
 
 
 from models.diffusion_model import EDM_CFG, edm_sampler, StackedRandomGenerator
@@ -849,8 +850,6 @@ def validation_accuracy(model_config_path, file_name, band = None, mode = None, 
     CL_actual = np.array(CL_actual)
     CD_actual = np.array(CD_actual)
 
-    # CL_error = (CL - CL_actual)/CL
-    # CD_error = (CD - CD_actual)/CD
 
     CL_error = (CL - CL_actual)/CL
     CD_error = (CD - CD_actual)/CD
@@ -890,15 +889,16 @@ def validation_accuracy(model_config_path, file_name, band = None, mode = None, 
                 print(f'Outlier in {second_variable_name}')
     CD_rmse = (CD_sum_of_square/len(CD_error))**0.5
     
-
-    print(f'The validation takes {len(results)} samples, among which {unfeasible} ({100*(unfeasible/len(results)):.2f}%) designs are unfeasible after 100 trials.')
+    final_unfeasible_percent = 100*(unfeasible/len(results))
+    average_design_trials = np.average(total_design_number)
+    total_unfeasible_design_percent = 100*(np.sum(unfeasible_design_number))/(np.sum(total_design_number))
+    print(f'The validation takes {len(results)} samples, among which {unfeasible} ({final_unfeasible_percent:.2f}%) designs are unfeasible after 100 trials.')
     print(f'The accuracy information of the {len(CL)} feasible designs are shown below:')
     print(f'{first_variable_name} RMSE is:', CL_rmse)
     print(f'{second_variable_name} RMSE is:', CD_rmse)
     print(f'{int(100*(CL_in_bound)/(len(CL)))}% samples have {first_variable_name} within {int(band_1*100)}% relative error.')
     print(f'{int(100*(CD_in_bound)/(len(CL)))}% samples have {second_variable_name} within {int(band_1*100)}% relative error.')
-
-    print(f'Averaged number of trials {np.average(total_design_number):.2f}, averaged percent of unfeasible designs {int(100*(np.sum(unfeasible_design_number))/(np.sum(total_design_number)))}%.')
+    print(f'Averaged number of trials {average_design_trials:.2f}, averaged percent of unfeasible designs {total_unfeasible_design_percent:.2f}%.')
 
     fig, axes = plt.subplots(1,2, figsize=(12,5))
 
@@ -1000,6 +1000,67 @@ def validation_accuracy(model_config_path, file_name, band = None, mode = None, 
     print(f"{second_variable_name} best-fit-line gradient is:", m_cd)
     save_fig_custom(fig, file_path='fig', file_name=f'single_target_accuracy_plot_{mode}_{data_structure}', 
                     format_list=['.eps', '.png'], overwrite=True, dpi = 500)
+
+    return CL_rmse, CD_rmse, final_unfeasible_percent, average_design_trials, total_unfeasible_design_percent
+
+
+
+def training_data_reduction_plot():
+    
+    pr_rsme_list = []
+    eta_rsme_list = []
+    final_unfeasible_percent_list = []
+    average_design_trials_list = []
+    total_unfeasible_design_percent_list = []
+    total_training_data = []
+    data_percentage_list = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10,1]
+    
+    for data_percentage in data_percentage_list:
+        with open(os.devnull, 'w') as f:
+            with redirect_stdout(f):
+                pr_rsme, eta_rsme, final_unfeasible_percent, average_design_trials, total_unfeasible_design_percent = validation_accuracy(model_config_path=f'mdl_hyperparams/1D_params_unet_{data_percentage}.yaml', 
+                                file_name = f'mdl_validation/1D_params_ResNet_UNet_64_5_4_with_100_epochs_{data_percentage/100:g}_data.csv',
+                                band = 0.1, mode = 'scatter', CL_axis_min=1, CL_axis_max=4, CD_axis_min=0.75, CD_axis_max=0.9)
+        pr_rsme_list.append(pr_rsme*100)
+        eta_rsme_list.append(eta_rsme*100)
+        final_unfeasible_percent_list.append(final_unfeasible_percent)
+        average_design_trials_list.append(average_design_trials)
+        total_unfeasible_design_percent_list.append(total_unfeasible_design_percent)
+        total_training_data.append(data_percentage*34442*0.8/100)
+    
+    fig, ax = plt.subplots()
+    ax.plot(data_percentage_list, pr_rsme_list, 'b')
+    ax.set_xlabel('Training Data Reduction %', fontsize = 14)
+    ax.set_ylabel('Pressure Ratio RMSE %', fontsize = 14)
+    ax.grid(True, ls = ':')
+
+
+    fig_2, ax_2 = plt.subplots()
+    ax_2.plot(data_percentage_list, eta_rsme_list, 'b')
+    ax_2.set_xlabel('Training Data Reduction %', fontsize = 14)
+    ax_2.set_ylabel('Total Efficiency RMSE %', fontsize = 14)
+    ax_2.grid(True, ls = ':')
+
+    fig_3, ax_3 = plt.subplots()
+    ax_3.plot(data_percentage_list, average_design_trials_list, 'b')
+    ax_3.set_xlabel('Training Data Reduction %', fontsize = 14)
+    ax_3.set_ylabel('Average Design Trials', fontsize = 14)
+    ax_3.grid(True, ls = ':')
+
+    fig_4, ax_4 = plt.subplots()
+    ax_4.plot(data_percentage_list, total_unfeasible_design_percent_list, 'b')
+    ax_4.set_xlabel('Training Data Reduction %', fontsize = 14)
+    ax_4.set_ylabel('Total Unfeasible Design %', fontsize = 14)
+    ax_4.grid(True, ls = ':')
+
+    
+
+    plt.show()
+
+
+
+
+
 
 
 def denoise_process_plot(model, data_structure, device, sample_size, num_steps, pca, fig_size, manual_seed = None, x_res = 128, y_res = 128):
@@ -1635,6 +1696,102 @@ def validation_1D(mode, device, sample_number, model, num_steps, manual_seed, mu
             off_design_plot_1D(multiple_design_geometry, m_dot, omega, pr, eta)
 
 
+
+
+
+def validation_3D(mode, device, sample_number, model, num_steps, manual_seed, multiple_design, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration, 
+                  m_dot, RPM, eta, pr, convert_to_3D, plot_blade_distribution):
+    
+    model.eval()
+    df, min_max, val_indices = load_1D_dataset()
+    geometry_min_max = pd.read_csv('dataset/3D_geometry_minmax.csv')
+    x_max = geometry_min_max['x_max'].iloc[0]
+    x_min = geometry_min_max['x_min'].iloc[0]
+    y_max = geometry_min_max['y_max'].iloc[0]
+    y_min = geometry_min_max['y_min'].iloc[0]
+    z_max = geometry_min_max['z_max'].iloc[0]
+    z_min = geometry_min_max['z_min'].iloc[0]
+
+    pr_tolerance = CL_tolerence
+    eta_tolerance = CD_tolerence
+
+
+    fig_3D = plt.figure(figsize=(10, 8))
+    ax_3D = fig_3D.add_subplot(111, projection="3d")
+
+    if mode == 'validation':
+        numbers = randomly_pick_1D_validation(manual_seed, sample_number)
+    else:
+        numbers = [0]
+
+    for idx in numbers:
+        
+        multiple_design_geometry = []
+        if mode == 'validation':
+            i = val_indices[idx]
+            pr = df.loc[i, 'pressure_ratio']
+            eta = df.loc[i, 'efficiency']
+            omega = df.loc[i, 'omega']
+            m_dot = df.loc[i, 'm_dot']
+        else:
+            pr_normalised, m_dot_normalised, eta_normalised, omega_normalised = test_condition_1D(m_dot, RPM, pr, eta)
+
+        design = 0
+        
+
+
+        pr_normalised = pr *(min_max.loc['pressure_ratio', 'max'] - min_max.loc['pressure_ratio', 'min']) + min_max.loc['pressure_ratio', 'min']
+        m_dot_normalised = m_dot*(min_max.loc['m_dot', 'max'] - min_max.loc['m_dot', 'min']) + min_max.loc['m_dot', 'min']
+        eta_normalised = eta * (min_max.loc['efficiency', 'max'] - min_max.loc['efficiency', 'min']) + min_max.loc['efficiency', 'min']
+        omega_normalised = omega * (min_max.loc['omega', 'max'] - min_max.loc['omega', 'min']) + min_max.loc['omega', 'min']
+    
+        print(m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised)
+
+
+
+        while design < multiple_design:
+
+            number_of_trials = 0
+            success = False
+
+            geometry_list = []
+            pr_error_list = []
+            eta_error_list = []
+            pr_list = []
+            eta_list = []
+
+            while not success and number_of_trials < max_iteration:
+                cond = (torch.tensor([m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised]).to(device))
+                
+                rnd = StackedRandomGenerator(device, range(sample_number))
+                latents = rnd.randn([sample_number, model.in_dim], device=device)
+
+                with torch.no_grad():
+                    samples, _ = edm_sampler(model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
+
+                samples = samples.float()
+                sample = samples[0].cpu().numpy()
+
+                x_normalised = sample[0::3]
+                y_normalised = sample[1::3]
+                z_normalised = sample[2::3]
+
+                x_coordinates = x_normalised * (x_max - x_min) + x_min
+                y_coordinates = y_normalised * (y_max - y_min) + y_min
+                z_coordinates = z_normalised * (z_max - z_min) + z_min
+
+
+                success = True
+                number_of_trials += 1
+                design += 1
+                # ax_3D.scatter(x_normalised, y_normalised, z_normalised, s=1, color='k')
+                ax_3D.scatter(x_coordinates[:511], y_coordinates[:511], z_coordinates[:511], s=1, color='k')
+                plt.show()
+
+
+                
+
+
 def model_deployment(mode, model_config_path, sample_number=1, AOA=None, Ma=None, Re=None, CL=None, CD=None, 
                      num_steps = None, fig_size = None, manual_seed = None, lim = 0.5, multiple_design = 1, 
                      x_foil_timeout=20, CL_tolerence = 0.01, CD_tolerence = 0.05, max_iteration = 100,
@@ -1650,7 +1807,8 @@ def model_deployment(mode, model_config_path, sample_number=1, AOA=None, Ma=None
     model_channel_multiplication = model_config['model_channel_multiplication']
     device=model_config['device']
     nn_structure=model_config['neural_network_sturcture']
-    model_code = f"{data_structure}_{nn_structure}_{model_channel}_{model_layer}_{len(model_channel_multiplication)}_with_{num_epochs}_epochs"
+    reduced_data_fraction=model_config['reduced_data_fraction']
+    model_code = f"{data_structure}_{nn_structure}_{model_channel}_{model_layer}_{len(model_channel_multiplication)}_with_{num_epochs}_epochs_{reduced_data_fraction}_data"
     save_path = f"mdl_weight/{model_code}.pth"
     print('Model Code', model_code)
     num_components=model_config['component_number']
@@ -1697,7 +1855,7 @@ def model_deployment(mode, model_config_path, sample_number=1, AOA=None, Ma=None
         model.load_state_dict(torch.load(save_path))
 
 
-    elif data_structure == '1D_params':
+    elif data_structure == '1D_params' or '3D_coordinates':
         
         model = EDM_CFG(num_components, num_components, cond_size=4, model_channel=model_channel,
                 channel_multiply=model_channel_multiplication, dim_mult_emb=4, num_blocks=model_layer,
@@ -1716,7 +1874,16 @@ def model_deployment(mode, model_config_path, sample_number=1, AOA=None, Ma=None
     model = model.to(device)
 
 
-    if data_structure != '1D_params':
+
+    if data_structure == '1D_params':
+        validation_1D(mode, device, sample_number, model, num_steps, manual_seed, multiple_design, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration,
+                      m_dot, RPM, eta, pr, convert_to_3D, plot_blade_distribution)
+        
+    elif data_structure == '3D_coordinates':
+        validation_3D(mode, device, sample_number, model, num_steps, manual_seed, multiple_design, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration,
+                      m_dot, RPM, eta, pr, convert_to_3D, plot_blade_distribution)
+        
+    else:
         if mode == 'denoise_process_plot':
             denoise_process_plot(model, data_structure, device, sample_number, num_steps, pca, fig_size, manual_seed, num_components, num_components)
 
@@ -1725,9 +1892,7 @@ def model_deployment(mode, model_config_path, sample_number=1, AOA=None, Ma=None
                         lim, multiple_design, num_components, num_components, x_foil_timeout, CL_tolerence, 
                         CD_tolerence, max_iteration, distribution_plot_switch, off_design_plot_switch, Re, Ma, AOA, CL, CD)
     
-    elif data_structure == '1D_params':
-        validation_1D(mode, device, sample_number, model, num_steps, manual_seed, multiple_design, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration,
-                      m_dot, RPM, eta, pr, convert_to_3D, plot_blade_distribution)
+
 
 
 
