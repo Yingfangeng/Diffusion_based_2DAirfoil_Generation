@@ -116,10 +116,12 @@ class Conv1DResNetUNetCFG(nn.Module):
         self.cond_drop_prob = cond_drop_prob
         self.channel_multiply = channel_multiply
         self.num_blocks = num_blocks
+        self.data_structure = data_structure
+
         if data_structure == 'raw_coordinates':
             self.in_channels = 2
             self.num_points = in_dim // 2
-        elif data_structure == 'pca' or '1D_params':
+        elif data_structure == 'pca' or data_structure == '1D_params':
             self.in_channels = 1
             self.num_points = number_of_pc
         elif data_structure == '3D_coordinates':
@@ -144,6 +146,7 @@ class Conv1DResNetUNetCFG(nn.Module):
 
         # First lifting layer (300x2 → 300x128)
         self.first_layer = nn.Conv1d(self.in_channels, model_channel, kernel_size=3, padding=1)
+        
         # ---------- Encoder ----------
         self.down_blocks = nn.ModuleList()
         self.maxpool = nn.MaxPool1d(kernel_size=2, stride=2)
@@ -232,8 +235,15 @@ class Conv1DResNetUNetCFG(nn.Module):
         # Combined embedding
         emb = time_emb + cond_emb   # (B, emb_dim)
 
-        #  Reshape 600 → (B,2,300) 
+        #  Reshape 512x11x3 → (B,3,512x11) 
         x = x.view(B, self.num_points, self.in_channels).permute(0,2,1)
+        
+        # else:
+        #     x = x.reshape(B, 11, 512, 3)
+        #     x = x.permute(0, 1, 3, 2)
+        #     x = x.reshape(B, 33, 512)
+        
+        # print(x.shape, 'hihihihihi')
 
         # First conv
         x = self.first_layer(x)

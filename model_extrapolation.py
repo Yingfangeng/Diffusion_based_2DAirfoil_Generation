@@ -295,7 +295,8 @@ def model_deployment( model_config_path, sample_percent, num_steps = None,  manu
     model_channel_multiplication = model_config['model_channel_multiplication']
     device=model_config['device']
     nn_structure=model_config['neural_network_sturcture']
-    model_code = f"{data_structure}_{nn_structure}_{model_channel}_{model_layer}_{len(model_channel_multiplication)}_with_{num_epochs}_epochs"
+    data_reduction= model_config['reduced_data_fraction']
+    model_code = f"{data_structure}_{nn_structure}_{model_channel}_{model_layer}_{len(model_channel_multiplication)}_with_{num_epochs}_epochs_{data_reduction}_data"
     save_path = f"mdl_weight/{model_code}.pth"
     print('Model Code', model_code)
     num_components=model_config['component_number']

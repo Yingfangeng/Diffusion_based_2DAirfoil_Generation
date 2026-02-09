@@ -1013,7 +1013,7 @@ def training_data_reduction_plot():
     average_design_trials_list = []
     total_unfeasible_design_percent_list = []
     total_training_data = []
-    data_percentage_list = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10,1]
+    data_percentage_list = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10,5,1]
     
     for data_percentage in data_percentage_list:
         with open(os.devnull, 'w') as f:
@@ -1029,26 +1029,26 @@ def training_data_reduction_plot():
         total_training_data.append(data_percentage*34442*0.8/100)
     
     fig, ax = plt.subplots()
-    ax.plot(data_percentage_list, pr_rsme_list, 'b')
+    ax.plot(data_percentage_list, pr_rsme_list, 'b', marker = 'o')
     ax.set_xlabel('Training Data Reduction %', fontsize = 14)
     ax.set_ylabel('Pressure Ratio RMSE %', fontsize = 14)
     ax.grid(True, ls = ':')
 
 
     fig_2, ax_2 = plt.subplots()
-    ax_2.plot(data_percentage_list, eta_rsme_list, 'b')
+    ax_2.plot(data_percentage_list, eta_rsme_list, 'b', marker = 'o')
     ax_2.set_xlabel('Training Data Reduction %', fontsize = 14)
     ax_2.set_ylabel('Total Efficiency RMSE %', fontsize = 14)
     ax_2.grid(True, ls = ':')
 
     fig_3, ax_3 = plt.subplots()
-    ax_3.plot(data_percentage_list, average_design_trials_list, 'b')
+    ax_3.plot(data_percentage_list, average_design_trials_list, 'b', marker = 'o')
     ax_3.set_xlabel('Training Data Reduction %', fontsize = 14)
     ax_3.set_ylabel('Average Design Trials', fontsize = 14)
     ax_3.grid(True, ls = ':')
 
     fig_4, ax_4 = plt.subplots()
-    ax_4.plot(data_percentage_list, total_unfeasible_design_percent_list, 'b')
+    ax_4.plot(data_percentage_list, total_unfeasible_design_percent_list, 'b', marker = 'o')
     ax_4.set_xlabel('Training Data Reduction %', fontsize = 14)
     ax_4.set_ylabel('Total Unfeasible Design %', fontsize = 14)
     ax_4.grid(True, ls = ':')
@@ -1970,7 +1970,7 @@ def visualise_the_extrapolation_testing_set():
 
     # change this line 
     coordinate_results = pd.read_csv('mdl_validation/coordinates_pareto_extrapolation.csv')
-    sdf_results = pd.read_csv('mdl_validation/sdf_pareto_extrapolation.csv')
+    sdf_results = pd.read_csv('mdl_validation/pareto_optimisation_1.05_CL_0.95_CD.csv')
     pca_results = pd.read_csv('mdl_validation/pca_pareto_extrapolation.csv')
 
 
@@ -1990,7 +1990,7 @@ def visualise_the_extrapolation_testing_set():
     ax.scatter(extrapolation['CD'], extrapolation['CL'], s=10, color = 'b', label = 'Pareto front')
 
 
-    for i in range(20):
+    for i in range(10):
         selected_coordinates = coordinate_results[coordinate_results['idx']==i+1]
         
 

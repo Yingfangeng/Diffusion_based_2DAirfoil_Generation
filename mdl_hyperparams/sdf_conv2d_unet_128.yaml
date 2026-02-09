@@ -14,3 +14,4 @@ device: 'cuda'
 component_number: 128
 sdf_path: 'dataset/sdf_matrix_128_normalised'
 restart: False    # restart from the previous training log
+reduced_data_fraction: 1
