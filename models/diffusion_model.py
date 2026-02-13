@@ -303,7 +303,7 @@ def load_blade_curve(filename):
             line = line.strip()
 
             # New profile marker
-            if line.startswith("#Profile"):
+            if line.startswith("#Profile") or line.startswith("# profile"):
                 if current_profile:
                     profiles.append(np.array(current_profile))
                     current_profile = []
@@ -501,10 +501,14 @@ if __name__ == '__main__':
                 profile, profile_has_error = load_blade_curve(f'{curve_file}/compressor_{i}.curve')
                 
                 if not profile_has_error:
-                    coordinate = np.concatenate(profile).ravel()
                     
+                    profile = [profile[0], profile[-1]]  # take the first profile only
+                    
+                    coordinate = np.concatenate(profile).ravel()
+                    # print(len(coordinate))
                     compressor_name = f'compressor_{i}'
                     coordinates[compressor_name] = coordinate
+
                     idx = df[df['geometry_index'] == i].index
                     df_2 = normalised_df.loc[idx]
 
@@ -520,7 +524,8 @@ if __name__ == '__main__':
                 continue
 
         cond_size = len(cond_data[0])
-
+        num_components = len(coordinate)
+        print(num_components)
 
     else:
         raise NotImplementedError

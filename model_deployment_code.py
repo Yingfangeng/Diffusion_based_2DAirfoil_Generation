@@ -1362,6 +1362,7 @@ def test_condition_1D(m_dot, RPM, pr, eta):
 
 
 
+
 def load_blade_curve(filename):
     profiles = []
     current_profile = []
@@ -1371,7 +1372,7 @@ def load_blade_curve(filename):
             line = line.strip()
 
             # New profile marker
-            if line.startswith("#Profile"):
+            if line.startswith("#Profile") or line.startswith("# profile"):
                 if current_profile:
                     profiles.append(np.array(current_profile))
                     current_profile = []
@@ -1393,7 +1394,6 @@ def load_blade_curve(filename):
                     continue
 
                 if not (np.isfinite(x) and np.isfinite(y) and np.isfinite(z)):
-                    # print('There is invalid value in line', index, 'skipped the invalid values!')
                     pass
                 
                 else:
@@ -1745,7 +1745,6 @@ def validation_3D(mode, device, sample_number, model, num_steps, manual_seed, mu
 
     for idx in numbers:
         
-        multiple_design_geometry = []
         if mode == 'validation':
             i = val_indices[idx]
             pr = df.loc[i, 'pressure_ratio']
@@ -1785,6 +1784,11 @@ def validation_3D(mode, device, sample_number, model, num_steps, manual_seed, mu
             theta_max_denormalised = theta_max * (theta_max_max - theta_max_min) + theta_max_min
             x_min_denormalised = xc_min * (x_min_max - x_min_min) + x_min_min
             x_max_denormalised = xc_max * (x_max_max - x_max_min) + x_max_min
+
+            original_profiles = load_blade_curve(f'dataset/3D_compressor_polar_normalised/compressor_{compressor_index}.curve')
+
+
+
 
         else:
             pr_normalised, m_dot_normalised, eta_normalised, omega_normalised = test_condition_1D(m_dot, RPM, pr, eta)
@@ -1829,8 +1833,8 @@ def validation_3D(mode, device, sample_number, model, num_steps, manual_seed, mu
 
                 if coordinate == 'polar':
 
-                    cond = (torch.tensor([m_dot, omega,  pr, eta, x_min, x_max, r_min, r_max, theta_min, theta_max]).to(device))
-                
+                    cond = (torch.tensor([m_dot, omega,  pr, eta, xc_min, xc_max, r_min, r_max, theta_min, theta_max]).to(device))
+                    print(m_dot, omega,  pr, eta, xc_min, xc_max, r_min, r_max, theta_min, theta_max)
                     rnd = StackedRandomGenerator(device, range(sample_number))
                     latents = rnd.randn([sample_number, model.in_dim], device=device)
 
@@ -1844,16 +1848,39 @@ def validation_3D(mode, device, sample_number, model, num_steps, manual_seed, mu
                     theta_normalised = sample[2::3]
                     x_normalised = sample[0::3]
 
-
                     r = r_normalised * (r_max_denormalised - r_min_denormalised) + r_min_denormalised 
                     theta = theta_normalised * (theta_max_denormalised - theta_min_denormalised) + theta_min_denormalised 
                     x = x_normalised * (x_max_denormalised - x_min_denormalised) + x_min_denormalised 
     
                     x, y, z = cyl_to_cart_about_x(x, r, theta)
-                    
-                    ax_3D.scatter(x, y, z, s=1, color='k')
-                    ax.scatter(x, (y**2 + z**2)**0.5, s = 1)
-                    
+                    r = (y**2 + z**2)**0.5
+
+                    ax_3D.plot(x[:250], y[:250], z[:250], color='r')
+                    ax_3D.plot(x[251:511], y[251:511], z[251:511], color='b')
+                    ax_3D.plot(x[512:763], y[512:763], z[512:763], color='r')
+                    ax_3D.plot(x[764:], y[764:], z[764:], color='b')
+
+                    ax.scatter(x[:250], r[:250], s = 1, color = 'r')
+                    ax.scatter(x[251:], r[251:], s = 1, color = 'b')
+                    ax.axis('equal')
+                    original_profiles = [original_profiles[0]]
+                    for profile in original_profiles:
+                        
+                        x_normalised = profile[:, 0]
+                        r_normalised = profile[:, 1]
+                        theta_normalised = profile[:, 2]
+                        r = r_normalised * (r_max_denormalised - r_min_denormalised) + r_min_denormalised 
+                        theta = theta_normalised * (theta_max_denormalised - theta_min_denormalised) + theta_min_denormalised 
+                        x = x_normalised * (x_max_denormalised - x_min_denormalised) + x_min_denormalised 
+
+                        x, y, z = cyl_to_cart_about_x(x, r, theta)
+                        
+                        
+                        # ax_3D.scatter(x, y, z, s=1, color='r')
+                        # ax.scatter(x, (y**2 + z**2)**0.5, s = 1, color = 'r')
+                        
+
+
                 success = True
                 number_of_trials += 1
                 design += 1
@@ -1942,7 +1969,7 @@ def model_deployment(mode, model_config_path, sample_number=1, AOA=None, Ma=None
         model.load_state_dict(torch.load(save_path))
 
     elif data_structure == '3D_coordinates':
-        print('exe')
+
         model = EDM_CFG(num_components, num_components, cond_size=10, model_channel=model_channel,
                 channel_multiply=model_channel_multiplication, dim_mult_emb=4, num_blocks=model_layer,
                 dropout=0, emb_type="sinusoidal", dim_mult_time=1, nn_structure=nn_structure,

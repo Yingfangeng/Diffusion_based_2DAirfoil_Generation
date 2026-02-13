@@ -145,7 +145,11 @@ class Conv1DResNetUNetCFG(nn.Module):
         self.map_cond_layer = nn.Linear(cond_dim * cond_size, emb_dim)
 
         # First lifting layer (300x2 → 300x128)
-        self.first_layer = nn.Conv1d(self.in_channels, model_channel, kernel_size=3, padding=1)
+        if self.data_structure == '3D_coordinates':
+            self.first_layer = nn.Conv1d(self.in_channels+1, model_channel, kernel_size=3, padding=1)
+        
+        else:
+            self.first_layer = nn.Conv1d(self.in_channels, model_channel, kernel_size=3, padding=1)
         
         # ---------- Encoder ----------
         self.down_blocks = nn.ModuleList()
@@ -236,15 +240,17 @@ class Conv1DResNetUNetCFG(nn.Module):
         emb = time_emb + cond_emb   # (B, emb_dim)
 
         #  Reshape 512x11x3 → (B,3,512x11) 
-        # if self.data_structure != '3D_coordinates':
         x = x.view(B, self.num_points, self.in_channels).permute(0,2,1)
         
-        # else:
-        #     x = x.reshape(B, 11, 512, 3)
-        #     x = x.permute(0, 1, 3, 2)
-        #     x = x.reshape(B, 33, 512)
-        
-        # print(x.shape, 'hihihihihi')
+        # additional channel to indicate whether this is the end/start of a profile
+        if self.data_structure == '3D_coordinates':
+            edge = torch.zeros((B, 1, self.num_points), device=device, dtype=x.dtype)
+            step = 512
+            starts = torch.arange(0, self.num_points, step, device=device)
+            ends = torch.clamp(starts + (step - 1), max=self.num_points - 1)
+            idx = torch.cat([starts, ends], dim=0)
+            edge[:, :, idx] = 1
+
 
         # First conv
         x = self.first_layer(x)
