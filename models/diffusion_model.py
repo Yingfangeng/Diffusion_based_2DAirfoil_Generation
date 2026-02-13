@@ -121,7 +121,6 @@ class Aerofoil_Dataset(Dataset):
 
             return torch.tensor(coordinates, dtype=torch.float32), torch.tensor(cond_data, dtype=torch.float32)
 
-
         else:
             coordinates = self.coordinates[idx]
             cond_data = self.cond_data[idx]
@@ -384,7 +383,7 @@ if __name__ == '__main__':
     reduced_data_fraction=model_config['reduced_data_fraction']
     # condition = model_config['condition']
     model_code = f"./mdl_weight/{data_structure}_{nn_structure}_{model_channel}_{model_layer}_{len(model_channel_multiplication)}_with_{num_epochs}_epochs_{reduced_data_fraction}_data_resume"
-    save_path = f"{model_code}_3D_debug.pth"
+    save_path = f"{model_code}_debug.pth"
     check_point_path = f"{model_code}_check_point.pth"
     print(f'The model weight will be saved to path {save_path}')
     print(f'This training uses {int(reduced_data_fraction*100)}% of the entire dataset')
@@ -486,12 +485,14 @@ if __name__ == '__main__':
 
     elif data_structure == '3D_coordinates':
         normalised_df = pd.read_csv('dataset/1D_compressor_geometry_normalised.csv')
+        geometry_normalised_df = pd.read_csv('dataset/polar_minmax_per_compressor_normalised.csv')
         num_components = int(model_config['component_number'])
         curve_file = model_config['curve_file_path']
         mode = '3D_coordinates'
 
         coordinates = {}
         unique_names = df['geometry_index'].unique()
+
 
         name = []
 
@@ -501,19 +502,25 @@ if __name__ == '__main__':
                 
                 if not profile_has_error:
                     coordinate = np.concatenate(profile).ravel()
+                    
                     compressor_name = f'compressor_{i}'
                     coordinates[compressor_name] = coordinate
                     idx = df[df['geometry_index'] == i].index
                     df_2 = normalised_df.loc[idx]
+
+                    df_3 = geometry_normalised_df[geometry_normalised_df['compressor_index'] == i]
                     
                     for _, row in df_2.iterrows():
-                        cond_data.append([row['m_dot'], row['omega'], row['pressure_ratio'], row['efficiency']])
+                        
+                        cond_data.append([row['m_dot'], row['omega'], row['pressure_ratio'], row['efficiency'], df_3['x_min'], df_3['x_max'], df_3['r_min'], df_3['r_max'], df_3['theta_min'], df_3['theta_max']])
+                        
                         name.append(compressor_name)
             
             except FileNotFoundError:
                 continue
 
         cond_size = len(cond_data[0])
+
 
     else:
         raise NotImplementedError
@@ -565,9 +572,9 @@ if __name__ == '__main__':
     print(len(train_set), len(val_set), len(test_set))
 
     # Save the dataset division indices
-    # np.save("dataset/1D_train_indices_proper_division.npy", train_indices)
-    # np.save("dataset/1D_val_indices_proper_division.npy", val_indices)
-    # np.save("dataset/1D_test_indices_proper_division.npy", test_indices)
+    np.save("dataset/1D_train_indices.npy", train_indices)
+    np.save("dataset/1D_val_indices.npy", val_indices)
+    np.save("dataset/1D_test_indices.npy", test_indices)
 
 
     Training = True

@@ -11,8 +11,10 @@ training:
 # 	python -m models.diffusion_model mdl_hyperparams/1D_params_unet_10.yaml
 # 	python -m models.diffusion_model mdl_hyperparams/1D_params_unet_5.yaml > mdl_weight/training_log/5_percent_data_training.log
 # 	python -m models.diffusion_model mdl_hyperparams/1D_params_unet_1.yaml
-	python -m models.diffusion_model mdl_hyperparams/1D_params_unet_0.5.yaml > mdl_weight/training_log/0.5_percent_data_training.log
-	python -m models.diffusion_model mdl_hyperparams/1D_params_unet_0.1.yaml > mdl_weight/training_log/0.1_percent_data_training.log
+# 	python -m models.diffusion_model mdl_hyperparams/1D_params_unet_0.5.yaml > mdl_weight/training_log/0.5_percent_data_training.log
+# 	python -m models.diffusion_model mdl_hyperparams/1D_params_unet_0.1.yaml > mdl_weight/training_log/0.1_percent_data_training.log
+
+	python -m models.diffusion_model mdl_hyperparams/3D_coords_unet.yaml > mdl_weight/training_log/3D_coordinates_200_epochs.log
 
 
 

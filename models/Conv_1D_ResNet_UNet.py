@@ -236,6 +236,7 @@ class Conv1DResNetUNetCFG(nn.Module):
         emb = time_emb + cond_emb   # (B, emb_dim)
 
         #  Reshape 512x11x3 → (B,3,512x11) 
+        # if self.data_structure != '3D_coordinates':
         x = x.view(B, self.num_points, self.in_channels).permute(0,2,1)
         
         # else:

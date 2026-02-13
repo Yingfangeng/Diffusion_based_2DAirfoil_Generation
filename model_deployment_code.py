@@ -1302,7 +1302,7 @@ def run_meanline(geometry, m_dot, omega, timeout=10):
 def load_1D_dataset():
     df = pd.read_csv('dataset/1D_compressor_geometry_normalised.csv')
     min_max = pd.read_csv('dataset/1D_compressor_geometry_minmax.csv')
-    val_indices = np.load('dataset/1D_test_indices_proper_division.npy')
+    val_indices = np.load('dataset/1D_test_indices.npy')
 
     if ("min" in min_max.columns) and ("max" in min_max.columns):
         feature_col = min_max.columns[0]
@@ -1555,6 +1555,8 @@ def validation_1D(mode, device, sample_number, model, num_steps, manual_seed, mu
     model.eval()
     df, min_max, val_indices = load_1D_dataset()
     
+
+
     pr_tolerance = CL_tolerence
     eta_tolerance = CD_tolerence
 
@@ -1572,6 +1574,8 @@ def validation_1D(mode, device, sample_number, model, num_steps, manual_seed, mu
             eta_normalised = df.loc[i, 'efficiency']
             omega_normalised = df.loc[i, 'omega']
             m_dot_normalised = df.loc[i, 'm_dot']
+            
+            
         else:
             pr_normalised, m_dot_normalised, eta_normalised, omega_normalised = test_condition_1D(m_dot, RPM, pr, eta)
 
@@ -1698,13 +1702,27 @@ def validation_1D(mode, device, sample_number, model, num_steps, manual_seed, mu
 
 
 
+def cyl_to_cart_about_x(x, r, theta):
+    y = r * np.cos(theta)
+    z = r * np.sin(theta)
+    return x, y, z
+
+
+
 
 def validation_3D(mode, device, sample_number, model, num_steps, manual_seed, multiple_design, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration, 
                   m_dot, RPM, eta, pr, convert_to_3D, plot_blade_distribution):
     
+
+    coordinate = 'polar' # polar or cartesian
+
+
     model.eval()
     df, min_max, val_indices = load_1D_dataset()
     geometry_min_max = pd.read_csv('dataset/3D_geometry_minmax.csv')
+    df_2 = pd.read_csv('dataset/1D_compressor_geometry.csv')
+    df_3 = pd.read_csv('dataset/polar_minmax_per_compressor_normalised.csv')
+    df_4 = pd.read_csv('dataset/polar_secondary_minmax.csv')
     x_max = geometry_min_max['x_max'].iloc[0]
     x_min = geometry_min_max['x_min'].iloc[0]
     y_max = geometry_min_max['y_max'].iloc[0]
@@ -1718,6 +1736,7 @@ def validation_3D(mode, device, sample_number, model, num_steps, manual_seed, mu
 
     fig_3D = plt.figure(figsize=(10, 8))
     ax_3D = fig_3D.add_subplot(111, projection="3d")
+    fig, ax = plt.subplots()
 
     if mode == 'validation':
         numbers = randomly_pick_1D_validation(manual_seed, sample_number)
@@ -1733,21 +1752,45 @@ def validation_3D(mode, device, sample_number, model, num_steps, manual_seed, mu
             eta = df.loc[i, 'efficiency']
             omega = df.loc[i, 'omega']
             m_dot = df.loc[i, 'm_dot']
+            compressor_index = df_2.loc[i, 'geometry_index']
+
+            
+            row = df_3.loc[df_3['compressor_index'].astype(int) == int(compressor_index)]
+            df_3 = row.iloc[0]
+
+            r_min = df_3['r_min']
+            r_max = df_3['r_max']
+            theta_min = df_3['theta_min']
+            theta_max = df_3['theta_max']
+            xc_min = df_3['x_min']
+            xc_max = df_3['x_max']
+
+
+            r_min_min = df_4['r_min_min'].iloc[0]
+            r_min_max = df_4['r_min_max'].iloc[0]
+            r_max_min = df_4['r_max_min'].iloc[0]
+            r_max_max = df_4['r_max_max'].iloc[0]
+            theta_min_min = df_4['theta_min_min'].iloc[0]
+            theta_min_max = df_4['theta_min_max'].iloc[0]
+            theta_max_min = df_4['theta_max_min'].iloc[0]
+            theta_max_max = df_4['theta_max_max'].iloc[0]
+            x_min_min = df_4['x_min_min'].iloc[0]
+            x_min_max = df_4['x_min_max'].iloc[0]
+            x_max_min = df_4['x_max_min'].iloc[0]
+            x_max_max = df_4['x_max_max'].iloc[0]
+
+            r_min_denormalised = r_min * (r_min_max - r_min_min) + r_min_min
+            r_max_denormalised = r_max * (r_max_max - r_max_min) + r_max_min
+            theta_min_denormalised = theta_min * (theta_min_max - theta_min_min) + theta_min_min
+            theta_max_denormalised = theta_max * (theta_max_max - theta_max_min) + theta_max_min
+            x_min_denormalised = xc_min * (x_min_max - x_min_min) + x_min_min
+            x_max_denormalised = xc_max * (x_max_max - x_max_min) + x_max_min
+
         else:
             pr_normalised, m_dot_normalised, eta_normalised, omega_normalised = test_condition_1D(m_dot, RPM, pr, eta)
 
         design = 0
         
-
-
-        pr_normalised = pr *(min_max.loc['pressure_ratio', 'max'] - min_max.loc['pressure_ratio', 'min']) + min_max.loc['pressure_ratio', 'min']
-        m_dot_normalised = m_dot*(min_max.loc['m_dot', 'max'] - min_max.loc['m_dot', 'min']) + min_max.loc['m_dot', 'min']
-        eta_normalised = eta * (min_max.loc['efficiency', 'max'] - min_max.loc['efficiency', 'min']) + min_max.loc['efficiency', 'min']
-        omega_normalised = omega * (min_max.loc['omega', 'max'] - min_max.loc['omega', 'min']) + min_max.loc['omega', 'min']
-    
-        print(m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised)
-
-
 
         while design < multiple_design:
 
@@ -1761,35 +1804,68 @@ def validation_3D(mode, device, sample_number, model, num_steps, manual_seed, mu
             eta_list = []
 
             while not success and number_of_trials < max_iteration:
-                cond = (torch.tensor([m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised]).to(device))
+
+                if coordinate == 'cartesian':
+                    cond = (torch.tensor([m_dot, omega,  pr, eta]).to(device))
                 
-                rnd = StackedRandomGenerator(device, range(sample_number))
-                latents = rnd.randn([sample_number, model.in_dim], device=device)
+                    rnd = StackedRandomGenerator(device, range(sample_number))
+                    latents = rnd.randn([sample_number, model.in_dim], device=device)
 
-                with torch.no_grad():
-                    samples, _ = edm_sampler(model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
+                    with torch.no_grad():
+                        samples, _ = edm_sampler(model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
 
-                samples = samples.float()
-                sample = samples[0].cpu().numpy()
+                    samples = samples.float()
+                    sample = samples[0].cpu().numpy()
+                    
+                    x_normalised = sample[0::3]
+                    y_normalised = sample[1::3]
+                    z_normalised = sample[2::3]
 
-                x_normalised = sample[0::3]
-                y_normalised = sample[1::3]
-                z_normalised = sample[2::3]
-
-                x_coordinates = x_normalised * (x_max - x_min) + x_min
-                y_coordinates = y_normalised * (y_max - y_min) + y_min
-                z_coordinates = z_normalised * (z_max - z_min) + z_min
+                    x_coordinates = x_normalised * (x_max - x_min) + x_min
+                    y_coordinates = y_normalised * (y_max - y_min) + y_min
+                    z_coordinates = z_normalised * (z_max - z_min) + z_min
+                    ax_3D.scatter(x_coordinates, y_coordinates, z_coordinates, s=1, color='k')
 
 
+                if coordinate == 'polar':
+
+                    cond = (torch.tensor([m_dot, omega,  pr, eta, x_min, x_max, r_min, r_max, theta_min, theta_max]).to(device))
+                
+                    rnd = StackedRandomGenerator(device, range(sample_number))
+                    latents = rnd.randn([sample_number, model.in_dim], device=device)
+
+                    with torch.no_grad():
+                        samples, _ = edm_sampler(model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
+
+                    samples = samples.float()
+                    sample = samples[0].cpu().numpy()
+
+                    r_normalised = sample[1::3]
+                    theta_normalised = sample[2::3]
+                    x_normalised = sample[0::3]
+
+
+                    r = r_normalised * (r_max_denormalised - r_min_denormalised) + r_min_denormalised 
+                    theta = theta_normalised * (theta_max_denormalised - theta_min_denormalised) + theta_min_denormalised 
+                    x = x_normalised * (x_max_denormalised - x_min_denormalised) + x_min_denormalised 
+    
+                    x, y, z = cyl_to_cart_about_x(x, r, theta)
+                    
+                    ax_3D.scatter(x, y, z, s=1, color='k')
+                    ax.scatter(x, (y**2 + z**2)**0.5, s = 1)
+                    
                 success = True
                 number_of_trials += 1
                 design += 1
-                # ax_3D.scatter(x_normalised, y_normalised, z_normalised, s=1, color='k')
-                ax_3D.scatter(x_coordinates[:511], y_coordinates[:511], z_coordinates[:511], s=1, color='k')
+
+                ax_3D.set_xlabel('X')
+                ax_3D.set_ylabel('Y')
+                ax_3D.set_zlabel('Z')
+                
                 plt.show()
 
 
-                
+
 
 
 def model_deployment(mode, model_config_path, sample_number=1, AOA=None, Ma=None, Re=None, CL=None, CD=None, 
@@ -1855,7 +1931,7 @@ def model_deployment(mode, model_config_path, sample_number=1, AOA=None, Ma=None
         model.load_state_dict(torch.load(save_path))
 
 
-    elif data_structure == '1D_params' or '3D_coordinates':
+    elif data_structure == '1D_params':
         
         model = EDM_CFG(num_components, num_components, cond_size=4, model_channel=model_channel,
                 channel_multiply=model_channel_multiplication, dim_mult_emb=4, num_blocks=model_layer,
@@ -1865,7 +1941,15 @@ def model_deployment(mode, model_config_path, sample_number=1, AOA=None, Ma=None
         pca = None
         model.load_state_dict(torch.load(save_path))
 
-
+    elif data_structure == '3D_coordinates':
+        print('exe')
+        model = EDM_CFG(num_components, num_components, cond_size=10, model_channel=model_channel,
+                channel_multiply=model_channel_multiplication, dim_mult_emb=4, num_blocks=model_layer,
+                dropout=0, emb_type="sinusoidal", dim_mult_time=1, nn_structure=nn_structure,
+                dim_mult_cond=1, cond_drop_prob=0, adaptive_scale=True, skip_scale=1.0, affine=False, data_structure=data_structure, 
+                    number_of_pc = num_components)
+        pca = None
+        model.load_state_dict(torch.load(save_path))
 
 
     total_params = sum(p.numel() for p in model.parameters())
@@ -2072,9 +2156,9 @@ def find_the_most_popular_flow_condition_1D():
 def extrapolation_test_set_generation_1D():
     
     df = pd.read_csv("dataset/1D_compressor_geometry.csv")
-    val_indices = np.load("dataset/1D_val_indices_proper_division.npy")
-    train_indices = np.load("dataset/1D_train_indices_proper_division.npy")
-    test_indices = np.load("dataset/1D_train_indices_proper_division.npy")
+    val_indices = np.load("dataset/1D_val_indices.npy")
+    train_indices = np.load("dataset/1D_train_indices.npy")
+    test_indices = np.load("dataset/1D_train_indices.npy")
 
     df_train = df
     
@@ -2107,7 +2191,7 @@ def extrapolation_test_set_generation_1D():
 
 
 def visualise_the_extrapolation_testing_set_1D():
-    train_indices = np.load("dataset/1D_train_indices_proper_division.npy")
+    train_indices = np.load("dataset/1D_train_indices.npy")
 
     extrapolation = pd.read_csv('extrapolation_1D.csv')#.sample(n=100, random_state=123)
     all = pd.read_csv('dataset/1D_compressor_geometry.csv').loc[train_indices]
