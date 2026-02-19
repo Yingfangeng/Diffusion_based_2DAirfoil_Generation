@@ -13,6 +13,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 import signal
 from meanline.meanline import MeanLine
+from scipy.signal import savgol_filter
 
 def sort_for_xfoil(x_list,y_list):
     coords = np.column_stack((x_list, y_list))
@@ -499,6 +500,565 @@ def validation_1D(device, sample_percent, model, num_steps, manual_seed, multipl
 
 
 
+def load_blade_curve(filename):
+    profiles = []
+    current_profile = []
+    profile_has_error = False
+    with open(filename, "r") as f:
+        for index, line in enumerate(f):
+            line = line.strip()
+
+            # New profile marker
+            if line.startswith("#Profile") or line.startswith("# profile"):
+                if current_profile:
+                    profiles.append(np.array(current_profile))
+                    current_profile = []
+                continue
+
+            # Skip comments / empty lines
+            if not line or line.startswith("#"):
+                continue
+
+            # Read coordinates
+            values = line.split()
+            if len(values) >= 3:
+                try:
+                    x = float(values[0])
+                    y = float(values[1])
+                    z = float(values[2])
+                except ValueError:
+                    profile_has_error = True
+                    continue
+
+                if not (np.isfinite(x) and np.isfinite(y) and np.isfinite(z)):
+                    profile_has_error = True
+                
+                else:
+                    current_profile.append([x, y, z])
+        # Append last profile
+        if current_profile:
+            profiles.append(np.array(current_profile))
+
+    return profiles, profile_has_error
+
+
+
+def load_1D_dataset():
+    df = pd.read_csv('dataset/1D_compressor_geometry_normalised.csv')
+    min_max = pd.read_csv('dataset/1D_compressor_geometry_minmax.csv')
+    val_indices = np.load('dataset/1D_test_indices.npy')
+
+    if ("min" in min_max.columns) and ("max" in min_max.columns):
+        feature_col = min_max.columns[0]
+    if feature_col not in ["min", "max"]:
+        min_max = min_max.set_index(feature_col)
+    min_max.index = min_max.index.astype(str).str.strip()
+
+    return df, min_max, val_indices
+
+
+def randomly_pick_1D_validation(manual_seed, sample_number):
+    
+    df, min_max, val_indices = load_1D_dataset()
+    
+    random.seed(manual_seed)
+    print('exe', manual_seed)
+    
+    numbers = random.sample(range(0, len(val_indices)), sample_number)
+
+    return numbers
+    
+
+def cyl_to_cart_about_x(x, r, theta):
+    y = r * np.cos(theta)
+    z = r * np.sin(theta)
+    return x, y, z
+
+
+
+
+def geometry_3D_to_1D_conversion(x,y,z,number_of_blades):
+    
+
+
+
+    x_both = np.concatenate((x[:512], x[-512:]))
+    y_both = np.concatenate((y[:512], y[-512:]))
+    z_both = np.concatenate((z[:512], z[-512:]))
+ 
+
+
+    # Hub profile
+    
+    x = x_both[:512]
+    y = y_both[:512]
+    z = z_both[:512]
+
+    x_max_idx, x_min_idx = np.argmax(x), np.argmin(x)
+    inlet_hub = [x[x_min_idx], y[x_min_idx], z[x_min_idx]]
+    outlet_hub = [x[x_max_idx], y[x_max_idx], z[x_max_idx]]
+
+    # PS
+    idx_1 = 249
+    idx_2 = idx_1+1
+    inlet_hub_1 = [x[idx_1], y[idx_1], z[idx_1]]
+    inlet_hub_2 = [x[idx_2], y[idx_2], z[idx_2]]
+    dx = abs(inlet_hub_2[0] - inlet_hub_1[0])
+    dz = abs(inlet_hub_2[2] - inlet_hub_1[2])
+    beta_b1_hub_1 = -np.atan2(dz, dx)
+
+    # SS
+    idx_1 = 261
+    idx_2 = idx_1+1
+    inlet_hub_3 = [x[idx_1], y[idx_1], z[idx_1]]
+    inlet_hub_4 = [x[idx_2], y[idx_2], z[idx_2]]
+    dx = abs(inlet_hub_4[0] - inlet_hub_3[0])
+    dz = abs(inlet_hub_4[2] - inlet_hub_3[2])
+    beta_b1_hub_2 = -np.atan2(dz, dx)
+   
+
+    # Calculate the average value of the two faces
+    beta_b1_hub = (beta_b1_hub_1 + beta_b1_hub_2)/2
+
+
+
+    r_hub_1 = (inlet_hub[1]**2 + inlet_hub[2]**2)**0.5
+    r_hub_2 = (outlet_hub[1]**2 + outlet_hub[2]**2)**0.5
+    
+
+    
+    suction_side = np.arange(0, 249)
+    pressure_side = np.arange(262, 512)[::-1]
+
+    thickness_hub = []
+    for i, suction_side_idx in enumerate(suction_side):
+        pressure_side_idx = pressure_side[i]
+        suction_side_point = [x[suction_side_idx], y[suction_side_idx], z[suction_side_idx]]
+        pressure_side_point = [x[pressure_side_idx], y[pressure_side_idx], z[pressure_side_idx]]
+        local_thickness = ((suction_side_point[0]-pressure_side_point[0])**2 
+                            +(suction_side_point[1]-pressure_side_point[1])**2 
+                            +(suction_side_point[2]-pressure_side_point[2])**2 )**0.5
+        thickness_hub.append(local_thickness)
+    thickness_hub = np.average(thickness_hub)
+        
+        
+
+    # Tip profile
+    x = x_both[-512:]
+    y = y_both[-512:]
+    z = z_both[-512:]
+    
+    x_max_idx, x_min_idx = np.argmax(x), np.argmin(x)
+    inlet_tip = [x[x_min_idx], y[x_min_idx], z[x_min_idx]]
+    outlet_tip = [x[x_max_idx], y[x_max_idx], z[x_max_idx]]                    
+
+
+    # The lower face
+    idx_1 = 249
+    idx_2 = idx_1+1
+    inlet_tip_1 = [x[idx_1], y[idx_1], z[idx_1]]
+    inlet_tip_2 = [x[idx_2], y[idx_2], z[idx_2]]
+    dx = abs(inlet_tip_2[0] - inlet_tip_1[0])
+    dz = abs(inlet_tip_2[2] - inlet_tip_1[2])
+    beta_b1_tip_1 = -np.atan2(dz, dx)
+    
+
+    # The upper face
+    idx_1 = 261
+    idx_2 = idx_1+1
+    inlet_tip_3 = [x[idx_1], y[idx_1], z[idx_1]]
+    inlet_tip_4 = [x[idx_2], y[idx_2], z[idx_2]]
+    dx = abs(inlet_tip_4[0] - inlet_tip_3[0])
+    dz = abs(inlet_tip_4[2] - inlet_tip_3[2])
+    beta_b1_tip_2 = -np.atan2(dz, dx)
+    
+
+    # Calculate the average value of the two faces
+    beta_b1_tip = (beta_b1_tip_1 + beta_b1_tip_2)/2
+    
+    r_tip_1 = (inlet_tip[1]**2 + inlet_tip[2]**2)**0.5
+    r_tip_2 = (outlet_tip[1]**2 + outlet_tip[2]**2)**0.5
+
+
+    thickness_tip = []
+    
+    for i, suction_side_idx in enumerate(suction_side):
+        pressure_side_idx = pressure_side[i]
+        suction_side_point = [x[suction_side_idx], y[suction_side_idx], z[suction_side_idx]]
+        pressure_side_point = [x[pressure_side_idx], y[pressure_side_idx], z[pressure_side_idx]]
+        local_thickness = ((suction_side_point[0]-pressure_side_point[0])**2 + (suction_side_point[1]-pressure_side_point[1])**2 + (suction_side_point[2]-pressure_side_point[2])**2 )**0.5
+        thickness_tip.append(local_thickness)
+    thickness_tip = np.average(thickness_tip)
+
+
+
+    L_z = (outlet_hub[0]-inlet_hub[0])/1000
+    r_tip_1 = r_tip_1/1000
+    r_hub_1 = r_hub_1 / 1000
+    R_mean_2 = np.average([r_hub_2, r_tip_2])/1000
+    b_2 = (outlet_hub[0]-outlet_tip[0])/1000
+    
+    thickness = np.average([thickness_hub, thickness_tip])
+    thickness = thickness*1.057 / 1000
+    L_z = L_z * 0.995
+    
+    # Derived values
+    R_mean_1 = (2/3) * (((r_tip_1**3) - (r_hub_1**3)) / ((r_tip_1**2) - (r_hub_1**2)))
+    beta_b1_mean = 0.4*beta_b1_hub + 0.6*beta_b1_tip
+    s = 0.027 * b_2
+    if s < 0.0003:
+        s = 0.0003
+
+    beta_b2 = -0.7854
+    R_3 = 1.5 * R_mean_2
+    b_3 = 0.8 * b_2
+
+
+    geometry  = {
+                'imp_type': 'Centrifugal', 
+                'P_01': 101325, 
+                'T_01': 288,
+                'R_tip_1': r_tip_1, 
+                'R_mean_1': R_mean_1, 
+                'R_hub_1': r_hub_1,
+                'alpha_1': 0, 
+                'beta_b1_hub': beta_b1_hub, 
+                'beta_b1_tip': beta_b1_tip,
+                'beta_b1_mean': beta_b1_mean,
+                'lambda_1': 1.0,
+                'beta_b2': beta_b2,
+                'R_mean_2': R_mean_2, 
+                'lambda_2': 1.0, 
+                'b_2': b_2, 
+                'L_z': L_z, 
+                't': thickness, 
+                's': s,
+                'nblades': int(number_of_blades),
+                'n_splitter_blades': int(number_of_blades)/2, # ensure equal number of main and splitter blades
+                'b3': b_3, 
+                'r3': R_3,
+                'slip_factor': 0.8223}
+
+
+    return geometry
+
+
+
+def smoothening_3D(x,y,z, poly, window):
+    
+    x_smooth_list = []
+    y_smooth_list = []
+    z_smooth_list = []
+    window = window      # must be odd; increase for more smoothing
+    poly   = poly       # polynomial order
+
+    points_per_profile = 512
+    number_of_profiles = int(len(x) / points_per_profile)
+
+    for profile_idx in range(number_of_profiles):
+        
+        ps_start_index = 0 + 512*profile_idx
+        ps_end_index = 251 + 512*profile_idx
+        ss_start_index = ps_end_index + 11
+        ss_end_index = 511 + 512*profile_idx
+
+        x_ps_fit = savgol_filter(x[ps_start_index:ps_end_index], window, poly)
+        y_ps_fit = savgol_filter(y[ps_start_index:ps_end_index], window, poly)
+        z_ps_fit = savgol_filter(z[ps_start_index:ps_end_index], window, poly)
+        
+        x_ss_fit = savgol_filter(x[ss_start_index:ss_end_index], window, poly)
+        y_ss_fit = savgol_filter(y[ss_start_index:ss_end_index], window, poly)
+        z_ss_fit = savgol_filter(z[ss_start_index:ss_end_index], window, poly)
+        
+        x_le = savgol_filter(x[ps_end_index:ss_start_index], 5, 3)
+        y_le = savgol_filter(y[ps_end_index:ss_start_index], 5, 3)
+        z_le = savgol_filter(z[ps_end_index:ss_start_index], 5, 3)
+        
+
+        x_smooth = np.concatenate([x_ps_fit, x_le, x_ss_fit])
+        y_smooth = np.concatenate([y_ps_fit, y_le, y_ss_fit])
+        z_smooth = np.concatenate([z_ps_fit, z_le, z_ss_fit])
+        r_smooth = (y_smooth**2 + z_smooth**2)**0.5
+        x_smooth_list.append(x_smooth)
+        y_smooth_list.append(y_smooth)
+        z_smooth_list.append(z_smooth)
+
+    return x_smooth_list, y_smooth_list, z_smooth_list
+
+
+
+
+
+
+
+def validation_3D(device, sample_percent, model, aux_model, num_steps, manual_seed, multiple_design, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration, 
+                  pca, data_structure, model_code):
+
+
+    coordinate = 'polar' # polar or cartesian
+    smoothening = False
+
+    model.eval()
+    aux_model.eval()
+
+    df, min_max, val_indices = load_1D_dataset()
+
+
+    geometry_min_max = pd.read_csv('dataset/3D_geometry_minmax.csv')
+    df_2 = pd.read_csv('dataset/1D_compressor_geometry.csv')
+    df_3 = pd.read_csv('dataset/polar_minmax_per_compressor_normalised.csv')
+    df_4 = pd.read_csv('dataset/polar_secondary_minmax.csv')
+    x_max = geometry_min_max['x_max'].iloc[0]
+    x_min = geometry_min_max['x_min'].iloc[0]
+    y_max = geometry_min_max['y_max'].iloc[0]
+    y_min = geometry_min_max['y_min'].iloc[0]
+    z_max = geometry_min_max['z_max'].iloc[0]
+    z_min = geometry_min_max['z_min'].iloc[0]
+
+
+    r_min_min = df_4['r_min_min'].iloc[0]
+    r_min_max = df_4['r_min_max'].iloc[0]
+    r_max_min = df_4['r_max_min'].iloc[0]
+    r_max_max = df_4['r_max_max'].iloc[0]
+    theta_min_min = df_4['theta_min_min'].iloc[0]
+    theta_min_max = df_4['theta_min_max'].iloc[0]
+    theta_max_min = df_4['theta_max_min'].iloc[0]
+    theta_max_max = df_4['theta_max_max'].iloc[0]
+    x_min_min = df_4['x_min_min'].iloc[0]
+    x_min_max = df_4['x_min_max'].iloc[0]
+    x_max_min = df_4['x_max_min'].iloc[0]
+    x_max_max = df_4['x_max_max'].iloc[0]
+
+    pr_tolerance = CL_tolerence
+    eta_tolerance = CD_tolerence
+
+
+    random.seed(manual_seed)
+    numbers = random.sample(range(0, len(val_indices)), int(len(val_indices)*sample_percent))
+
+    print('exe', manual_seed)
+
+    sample_number = 1
+
+    output_file = f'mdl_validation/{model_code}.csv'
+    print(f'The validation output will be stored at {output_file}')
+
+    if os.path.exists(output_file):
+        print(f"Existing file '{output_file}', a new validation csv with suffix v2 will be created.")
+        output_file = f'mdl_validation/{model_code}_v2.csv'
+    results_df = pd.DataFrame()
+
+
+    for idx in tqdm(numbers):
+        i = val_indices[idx]
+
+
+        pr_normalised = df.loc[i, 'pressure_ratio']
+        eta_normalised = df.loc[i, 'efficiency']
+        omega_normalised = df.loc[i, 'omega']
+        m_dot_normalised = df.loc[i, 'm_dot']
+
+        compressor_index = df_2.loc[i, 'geometry_index']
+        number_of_unfeasible_designs = 0
+
+        try: 
+            row = df_3.loc[df_3['compressor_index'].astype(int) == int(compressor_index)]
+
+            r_min = row.iloc[0]['r_min']
+            r_max = row.iloc[0]['r_max']
+            theta_min = row.iloc[0]['theta_min']
+            theta_max = row.iloc[0]['theta_max']
+            xc_min = row.iloc[0]['x_min']
+            xc_max = row.iloc[0]['x_max']
+
+                
+            design = 0
+            
+            multiple_design_geometry = []
+            multiple_design_blade_number = []
+            multiple_design_1D_geometry = []
+            while design < multiple_design:
+
+                number_of_trials = 0
+                success = False
+
+                geometry_list = []
+                geometry_1D_list = []
+                blade_number_list = []
+                pr_error_list = []
+                eta_error_list = []
+                pr_list = []
+                eta_list = []
+
+                while not success and number_of_trials < max_iteration:
+
+                    if coordinate == 'cartesian':
+                        cond = (torch.tensor([m_dot, omega,  pr, eta]).to(device))
+                    
+                        rnd = StackedRandomGenerator(device, range(sample_number))
+                        latents = rnd.randn([sample_number, model.in_dim], device=device)
+
+                        with torch.no_grad():
+                            samples, _ = edm_sampler(model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
+
+                        samples = samples.float()
+                        sample = samples[0].cpu().numpy()
+                        
+                        x_normalised = sample[0::3]
+                        y_normalised = sample[1::3]
+                        z_normalised = sample[2::3]
+
+                        x_coordinates = x_normalised * (x_max - x_min) + x_min
+                        y_coordinates = y_normalised * (y_max - y_min) + y_min
+                        z_coordinates = z_normalised * (z_max - z_min) + z_min
+                        
+
+                    elif coordinate == 'polar':
+
+                        
+                        # The first model, input 4 output 8
+                        cond = (torch.tensor([m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised]).to(device))
+                        # print(m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised)
+                        rnd = StackedRandomGenerator(device, range(sample_number))
+                        latents = rnd.randn([sample_number, aux_model.in_dim], device=device)
+                        with torch.no_grad():
+                            samples, _ = edm_sampler(aux_model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
+                        
+                        samples = samples.float()
+                        sample = samples[0].cpu().numpy()
+                        xc_min = sample[0]
+                        xc_max = sample[1]
+                        r_min = sample[2]
+                        r_max = sample[3]
+                        theta_min = sample[4]
+                        theta_max = sample[5]
+                        n_blades = sample[6]
+                        n_splitter =  sample[7]
+
+                        
+                        # The main model
+                        cond = (torch.tensor([m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised, xc_min, xc_max, r_min, r_max, theta_min, theta_max, n_blades, n_splitter]).to(device))
+                        # print(m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised, xc_min, xc_max, r_min, r_max, theta_min, theta_max, n_blades, n_splitter)
+                        rnd = StackedRandomGenerator(device, range(sample_number))
+                        latents = rnd.randn([sample_number, model.in_dim], device=device)
+                        with torch.no_grad():
+                            samples, _ = edm_sampler(model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
+                        samples = samples.float()
+                        sample = samples[0].cpu().numpy()
+
+
+                        if data_structure == '3D_PCA':
+                            sample = pca.inverse_transform(sample)
+                        
+
+                        r_normalised = sample[1::3]
+                        theta_normalised = sample[2::3]
+                        x_normalised = sample[0::3]
+                        
+
+                        r_min_denormalised = r_min * (r_min_max - r_min_min) + r_min_min
+                        r_max_denormalised = r_max * (r_max_max - r_max_min) + r_max_min
+                        theta_min_denormalised = theta_min * (theta_min_max - theta_min_min) + theta_min_min
+                        theta_max_denormalised = theta_max * (theta_max_max - theta_max_min) + theta_max_min
+                        x_min_denormalised = xc_min * (x_min_max - x_min_min) + x_min_min
+                        x_max_denormalised = xc_max * (x_max_max - x_max_min) + x_max_min
+
+
+                        r = r_normalised * (r_max_denormalised - r_min_denormalised) + r_min_denormalised 
+                        theta = theta_normalised * (theta_max_denormalised - theta_min_denormalised) + theta_min_denormalised 
+                        x = x_normalised * (x_max_denormalised - x_min_denormalised) + x_min_denormalised 
+        
+                        x, y, z = cyl_to_cart_about_x(x, r, theta)
+                        
+                        if smoothening:
+                            x, y, z = smoothening_3D(x,y,z,3,11)
+
+
+                        if round(n_blades) == 0:
+                            number_of_blades =10
+                        else:
+                            number_of_blades =12
+
+                        geometry_1D = geometry_3D_to_1D_conversion(x,y,z, number_of_blades)
+                        
+                        
+
+
+                    m_dot = m_dot_normalised*(min_max.loc['m_dot', 'max']  - min_max.loc['m_dot', 'min']) + min_max.loc['m_dot', 'min']
+                    omega = omega_normalised*(min_max.loc['omega', 'max']  - min_max.loc['omega', 'min']) + min_max.loc['omega', 'min']
+                    pr_original = pr_normalised*(min_max.loc['pressure_ratio', 'max']  - min_max.loc['pressure_ratio', 'min']) + min_max.loc['pressure_ratio', 'min']
+                    eta_original = eta_normalised*(min_max.loc['efficiency', 'max']  - min_max.loc['efficiency', 'min']) + min_max.loc['efficiency', 'min']
+
+                    
+                    RPM = (omega*60)/(2*np.pi)
+
+                    pr, eta = run_meanline(geometry_1D, m_dot, omega, x_foil_timeout)
+
+                    pr_error = 100*abs(pr - pr_original) / (pr_original)
+                    eta_error = 100*abs(eta - eta_original) / (eta_original)
+                    
+                    pr_error_list.append(pr_error)
+                    eta_error_list.append(eta_error)
+                    pr_list.append(pr)
+                    eta_list.append(eta)
+                    geometry = [x,y,z]
+                    geometry_list.append(geometry)
+                    geometry_1D_list.append(geometry_1D)
+                    blade_number_list.append(number_of_blades)
+
+                    number_of_trials += 1
+                    # print(number_of_trials)
+                    # print(f'Pressure ratio {pr} has relative error {pr_error}% compared to {pr_original}.')
+                    # print(f'Efficiency {eta} has relative error {eta_error}% compared to {eta_original}. ')
+                    if pr_error < pr_tolerance and eta_error < eta_tolerance:
+                        # print(f'Number {design+1} design took {number_of_trials} trials.')
+                        # print(f'Pressure ratio {pr} has relative error {pr_error}% compared to {pr_original}.')
+                        # print(f'Efficiency {eta} has relative error {eta_error}% compared to {eta_original}. ')
+                        success = True
+                    elif pr == 999 or eta == 999:
+                        number_of_unfeasible_designs += 1
+                design += 1
+
+                if number_of_trials == max_iteration:
+
+                    index = pr_error_list.index(min(pr_error_list))
+
+                    geometry = geometry_list[index]
+                    geometry_1D = geometry_1D_list[index]
+                    number_of_blades = blade_number_list[index]
+                    pr = pr_list[index]
+                    eta = eta_list[index]
+                    pr_error = pr_error_list[index]
+                    eta_error = eta_error_list[index]
+                    print(f'Number {design} design cannot satisfy the tolerance after {number_of_trials} trails.')
+                    print(f'Using the best design: pressure ratio {pr} has relative error {pr_error}% compared to {pr_original}.')
+                    print(f'Efficiency {eta} has relative error {eta_error}% compared to {eta_original}. ')
+
+                
+                multiple_design_geometry.append(geometry)
+                multiple_design_1D_geometry.append(geometry_1D)
+                multiple_design_blade_number.append(number_of_blades)
+
+                
+                # print(f'Number {design} design has blade number of {number_of_blades}.')
+
+            new_row = {"omega": omega, "m_dot": m_dot, "pr_original": pr_original, "eta_original": eta_original, "pr_actual": pr, "eta_actual": eta, "design_iteration": number_of_trials, "unfeasible_design": number_of_unfeasible_designs}
+            results_df = pd.concat([results_df, pd.DataFrame([new_row])], ignore_index=True)
+            results_df.to_csv(output_file, index=False)
+        
+        
+        
+        except KeyError:
+            pass
+
+
+
+
+
+
+
+
+
 
 
 
@@ -572,24 +1132,67 @@ def model_deployment( model_config_path, sample_percent, num_steps = None,  manu
         model.load_state_dict(torch.load(save_path))
 
 
+    elif data_structure == '3D_PCA':
+        
+        curve_file = 'dataset/3D_compressor_polar_normalised'
+        coordinates = []
+
+        for i in range(1512):
+            try:
+                profile, profile_has_error = load_blade_curve(f'{curve_file}/compressor_{i}.curve')
+                if not profile_has_error:
+                    coordinate = np.concatenate(profile).ravel()
+                coordinates.append(coordinate)
+                
+            except FileNotFoundError:
+                pass
+        
+        coordinates = np.array(coordinates)
+        pca = PCA(n_components=num_components)
+        pca_scores = pca.fit_transform(coordinates)
+        
+
+        model = EDM_CFG(num_components, num_components, cond_size=12, model_channel=model_channel,
+                channel_multiply=model_channel_multiplication, dim_mult_emb=4, num_blocks=model_layer,
+                dropout=0, emb_type="sinusoidal", dim_mult_time=1, nn_structure=nn_structure,
+                dim_mult_cond=1, cond_drop_prob=0, adaptive_scale=True, skip_scale=1.0, affine=False, data_structure=data_structure, 
+                    number_of_pc = num_components)
+        model.load_state_dict(torch.load(save_path))
+
+
+        aux_model = EDM_CFG(8, 8, cond_size=4, model_channel=model_channel,
+                channel_multiply=[1,2,4], dim_mult_emb=4, num_blocks=model_layer,
+                dropout=0, emb_type="sinusoidal", dim_mult_time=1, nn_structure=nn_structure,
+                dim_mult_cond=1, cond_drop_prob=0, adaptive_scale=True, skip_scale=1.0, affine=False, data_structure='3D_aux', 
+                    number_of_pc = 8)
+        aux_model.load_state_dict(torch.load('mdl_weight/3D_aux_ResNet_UNet_64_5_3_with_100_epochs_1_data.pth'))
+        
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        aux_model = aux_model.to(device)
+
 
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Total parameters: {total_params:,}")
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
 
-    if data_structure != '1D_params':
+    
+        
+    if data_structure == '1D_params':
+        validation_1D(device, sample_percent, model, num_steps, manual_seed, 1, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration, model_code)
+
+    elif data_structure == '3D_coordinates' or data_structure == '3D_PCA':
+        validation_3D(device, sample_percent, model, aux_model, num_steps, manual_seed, 1, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration,
+                       pca, data_structure, model_code)
+    else:
         model_validation(model, model_code, data_structure, device, sample_percent, pca = pca, num_steps = num_steps, 
                         manual_seed = manual_seed, x_foil_timeout = x_foil_timeout, CL_tolerence = CL_tolerence, 
                         CD_tolerence = CD_tolerence, max_iteration = max_iteration, mode = mode)
-    elif data_structure == '1D_params':
-        validation_1D(device, sample_percent, model, num_steps, manual_seed, 1, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration, model_code)
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run diffusion model with YAML config.")
     parser.add_argument("config", type=str, help="Path to the YAML config file")
     args = parser.parse_args()
     config_file = args.config
-    model_deployment( config_file, sample_percent = 0.2, num_steps = 100,  manual_seed = 123,
-                     x_foil_timeout=5, CL_tolerence = 0.01, CD_tolerence = 0.01, max_iteration = 100, mode = 'intermediate')
+    model_deployment(config_file, sample_percent = 0.2, num_steps = 100,  manual_seed = 123,
+                     x_foil_timeout=5, CL_tolerence = 1, CD_tolerence = 1, max_iteration = 100, mode = 'trivial')

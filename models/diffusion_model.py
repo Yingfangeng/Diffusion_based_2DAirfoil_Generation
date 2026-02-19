@@ -122,6 +122,7 @@ class Aerofoil_Dataset(Dataset):
             return torch.tensor(coordinates, dtype=torch.float32), torch.tensor(cond_data, dtype=torch.float32)
 
         else:
+
             coordinates = self.coordinates[idx]
             cond_data = self.cond_data[idx]
             return torch.tensor(coordinates, dtype=torch.float32), torch.tensor(cond_data, dtype=torch.float32)
@@ -483,6 +484,41 @@ if __name__ == '__main__':
         
         cond_size = len(cond_data[0])
 
+
+    elif data_structure == '3D_aux':
+
+        mode = '3D_aux'
+        
+        name = 'trivial'
+
+        num_components = int(model_config['component_number'])
+
+
+        df_2 = pd.read_csv('dataset/polar_minmax_per_compressor_normalised.csv')
+        df_3 = pd.read_csv('dataset/1D_compressor_geometry.csv')
+
+
+
+        coordinates = []
+        cond_data = []
+        
+
+        for idx, row in df.iterrows():
+            
+            row_3 = df_3.iloc[idx]
+            compressor_index = row_3['geometry_index']
+            row_2 = df_2[df_2['compressor_index'] == compressor_index]
+
+            if len(row_2) == 1:
+            
+                coordinates.append([row_2['x_min'].item(), row_2['x_max'].item(), row_2['r_min'].item(), row_2['r_max'].item(), row_2['theta_min'].item(), row_2['theta_max'].item(), row['nblades'], row['n_splitter_blades']])
+                
+                cond_data.append([row['m_dot'], row['omega'], row['pressure_ratio'], row['efficiency']])
+        
+        cond_size = len(cond_data[0])
+
+
+
     elif data_structure == '3D_coordinates' or data_structure == '3D_PCA':
         normalised_df = pd.read_csv('dataset/1D_compressor_geometry_normalised.csv')
         geometry_normalised_df = pd.read_csv('dataset/polar_minmax_per_compressor_normalised.csv')
@@ -527,7 +563,6 @@ if __name__ == '__main__':
                     for _, row in df_2.iterrows():
                         
                         cond_data.append([row['m_dot'], row['omega'], row['pressure_ratio'], row['efficiency'], df_3['x_min'], df_3['x_max'], df_3['r_min'], df_3['r_max'], df_3['theta_min'], df_3['theta_max'], row['nblades'], row['n_splitter_blades']])
-                        # cond_data.append([row['m_dot'], row['omega'], row['pressure_ratio'], row['efficiency']])
                         
                         name.append(compressor_name)
             

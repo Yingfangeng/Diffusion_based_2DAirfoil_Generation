@@ -121,7 +121,7 @@ class Conv1DResNetUNetCFG(nn.Module):
         if data_structure == 'raw_coordinates':
             self.in_channels = 2
             self.num_points = in_dim // 2
-        elif data_structure == 'pca' or data_structure == '1D_params' or data_structure == '3D_PCA':
+        elif data_structure == 'pca' or data_structure == '1D_params' or data_structure == '3D_PCA' or data_structure == '3D_aux':
             self.in_channels = 1
             self.num_points = number_of_pc
         elif data_structure == '3D_coordinates':
@@ -221,9 +221,8 @@ class Conv1DResNetUNetCFG(nn.Module):
 
 
     def _forward(self, x, cond, time, context_mask=None, cond_drop_prob=None):
-
+        
         B, D = x.shape
-
         assert D == self.in_dim
         device = x.device
 
