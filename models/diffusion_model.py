@@ -114,7 +114,7 @@ class Aerofoil_Dataset(Dataset):
 
             return torch.FloatTensor(sdf), torch.FloatTensor(cond_data)
 
-        elif self.mode == '3D_coordinates':
+        elif self.mode == '3D_coordinates' or self.mode == '3D_PCA':
             name_label = self.name[idx]
             cond_data = self.cond_data[idx]
             coordinates = self.coordinates[name_label]
@@ -392,7 +392,7 @@ if __name__ == '__main__':
 
 
 
-    if data_structure != '1D_params' and data_structure != '3D_coordinates':
+    if data_structure == 'pca' or data_structure == 'raw_coords' or data_structure == 'sdf':
         for _, row in df.iterrows():
             x_coords = np.fromstring(row["x"].strip("[]"), sep=" ")
             y_coords = np.fromstring(row["y"].strip("[]"), sep=" ")
@@ -483,18 +483,19 @@ if __name__ == '__main__':
         
         cond_size = len(cond_data[0])
 
-    elif data_structure == '3D_coordinates':
+    elif data_structure == '3D_coordinates' or data_structure == '3D_PCA':
         normalised_df = pd.read_csv('dataset/1D_compressor_geometry_normalised.csv')
         geometry_normalised_df = pd.read_csv('dataset/polar_minmax_per_compressor_normalised.csv')
         num_components = int(model_config['component_number'])
         curve_file = model_config['curve_file_path']
-        mode = '3D_coordinates'
+        
 
         coordinates = {}
         unique_names = df['geometry_index'].unique()
 
-
+        coordinates_pca = []
         name = []
+        name_unique = []
 
         for i in unique_names:
             try: 
@@ -502,35 +503,62 @@ if __name__ == '__main__':
                 
                 if not profile_has_error:
                     
-                    profile = [profile[0], profile[-1]]  # take the first profile only
+                    # profile = [profile[0], profile[-1]]  # take the first profile only
                     
                     coordinate = np.concatenate(profile).ravel()
-                    # print(len(coordinate))
+                    
+                    if data_structure == '3D_PCA':
+                        mode = '3D_PCA'
+                        coordinates_pca.append(coordinate)
+                        
+
+                    elif data_structure == '3D_coordinates':
+                        mode = '3D_coordinates'
+                        num_components = len(coordinate)
+                    
                     compressor_name = f'compressor_{i}'
+                    name_unique.append(compressor_name)
                     coordinates[compressor_name] = coordinate
 
                     idx = df[df['geometry_index'] == i].index
                     df_2 = normalised_df.loc[idx]
-
                     df_3 = geometry_normalised_df[geometry_normalised_df['compressor_index'] == i]
                     
                     for _, row in df_2.iterrows():
                         
-                        cond_data.append([row['m_dot'], row['omega'], row['pressure_ratio'], row['efficiency'], df_3['x_min'], df_3['x_max'], df_3['r_min'], df_3['r_max'], df_3['theta_min'], df_3['theta_max']])
+                        cond_data.append([row['m_dot'], row['omega'], row['pressure_ratio'], row['efficiency'], df_3['x_min'], df_3['x_max'], df_3['r_min'], df_3['r_max'], df_3['theta_min'], df_3['theta_max'], row['nblades'], row['n_splitter_blades']])
+                        # cond_data.append([row['m_dot'], row['omega'], row['pressure_ratio'], row['efficiency']])
                         
                         name.append(compressor_name)
             
             except FileNotFoundError:
                 continue
+        
+        if data_structure == '3D_PCA':
+            coordinates_pca = np.array(coordinates_pca)
+            coordinates = {}
+            num_components = int(model_config['component_number'])
+            pca = PCA(n_components=num_components)
+            coordinates_pca = pca.fit_transform(coordinates_pca)
+
+            for idx, compressor_name in enumerate(name_unique):
+                coordinates[compressor_name] = coordinates_pca[idx]
 
         cond_size = len(cond_data[0])
-        num_components = len(coordinate)
-        print(num_components)
+        
+
+        print(f'Model input dimension {num_components}, condition size {cond_size}')
 
     else:
         raise NotImplementedError
 
+
     dataset = Aerofoil_Dataset(coordinates, cond_data, name, mode)
+    
+    
+    
+    
+    
     print('passed dataset initialisation')
 
     # generator = torch.Generator().manual_seed(0)
@@ -573,7 +601,7 @@ if __name__ == '__main__':
     val_set   = torch.utils.data.Subset(dataset, val_indices.tolist())
     test_set  = torch.utils.data.Subset(dataset, test_indices.tolist())
 
-    print("passed data division")
+    print("passed data division, train/val/test data number:")
     print(len(train_set), len(val_set), len(test_set))
 
     # Save the dataset division indices
@@ -609,7 +637,7 @@ if __name__ == '__main__':
 
         # initialise the optimiser and scheduler
         optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=100, T_mult=2, eta_min=1e-6, last_epoch=-1)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=num_epochs, T_mult=2, eta_min=1e-6, last_epoch=-1)
         scheduler_iters = len(train_loader)
         print('passed the optimiser initialisation')
         
