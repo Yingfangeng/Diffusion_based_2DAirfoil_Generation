@@ -100,6 +100,7 @@ class Conv2DResNetUNetCFG(nn.Module):
                  adaptive_scale      = True,
                  skip_scale          = 1.0,
                  affine              = False,
+                 data_structure      = 'sdf',
                  **kwargs):
 
         super().__init__()
@@ -110,13 +111,17 @@ class Conv2DResNetUNetCFG(nn.Module):
         self.cond_drop_prob = cond_drop_prob
         self.channel_multiply = channel_multiply
         self.num_blocks = num_blocks
+        self.data_structure = data_structure
 
-        self.in_channels = 1
+        if self.data_structure == 'sdf':
+            self.in_channels = 1
+            self.h = y_resolution
+            self.w = x_resolution
+        elif self.data_structure == '3D_coordinates':
 
-
-
-        self.h = y_resolution
-        self.w = x_resolution
+            self.in_channels = 3
+            self.h = 512 # number of points per profile
+            self.w = 16 # number of profiles
 
 
         emb_dim  = model_channel * dim_mult_emb
@@ -196,7 +201,7 @@ class Conv2DResNetUNetCFG(nn.Module):
 
     def _forward(self, x, cond, time, context_mask=None, cond_drop_prob=None):
         B = x.shape[0]
-
+        # print(x.shape, 'unet input')
         device = x.device
 
         time_emb = F.silu(self.map_time_layer(self.map_time(time)))
@@ -209,8 +214,18 @@ class Conv2DResNetUNetCFG(nn.Module):
             cond_emb = torch.where(keep.unsqueeze(-1), cond_emb, self.null_emb.unsqueeze(0))
 
         emb = time_emb + cond_emb
+        
+        if self.data_structure == 'sdf':
+            x = x.view(B, self.in_channels, self.h, self.w)
+        
+        elif self.data_structure == '3D_coordinates':
 
-        x = x.view(B, self.in_channels, self.h, self.w)
+            x = x.view(B, self.w, self.h, self.in_channels)
+            # print(x.shape, 'shape after view')
+            x = x.permute(0, 3, 1, 2)
+            # print(x.shape, 'shape after permute')
+        
+        
 
         x = self.first_layer(x)
 
@@ -232,6 +247,10 @@ class Conv2DResNetUNetCFG(nn.Module):
                 x = block(x, emb)
 
         x = self.final_layer(F.silu(x))
+        
+        
+        # reshape the tensor back to the original form
+        x = x.permute(0, 2, 3, 1).reshape(B, 1, self.w, self.h*3)
 
         return x
 

@@ -792,7 +792,7 @@ def smoothening_3D(x,y,z, poly, window):
 
 
 def validation_3D(device, sample_percent, model, aux_model, num_steps, manual_seed, multiple_design, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration, 
-                  pca, data_structure, model_code):
+                  pca, data_structure, model_code, number_of_profiles = None, number_of_points = None):
 
 
     coordinate = 'polar' # polar or cartesian
@@ -940,15 +940,23 @@ def validation_3D(device, sample_percent, model, aux_model, num_steps, manual_se
                         cond = (torch.tensor([m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised, xc_min, xc_max, r_min, r_max, theta_min, theta_max, n_blades, n_splitter]).to(device))
                         # print(m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised, xc_min, xc_max, r_min, r_max, theta_min, theta_max, n_blades, n_splitter)
                         rnd = StackedRandomGenerator(device, range(sample_number))
-                        latents = rnd.randn([sample_number, model.in_dim], device=device)
-                        with torch.no_grad():
-                            samples, _ = edm_sampler(model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
-                        samples = samples.float()
-                        sample = samples[0].cpu().numpy()
-
-
+                        
                         if data_structure == '3D_PCA':
+                            latents = rnd.randn([sample_number, model.in_dim], device=device)
+                            with torch.no_grad():
+                                samples, _ = edm_sampler(model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
+                            samples = samples.float()
+                            sample = samples[0].cpu().numpy()
                             sample = pca.inverse_transform(sample)
+                        
+
+                        if data_structure == '3D_coordinates':
+                            latents = torch.randn(1, 1, number_of_profiles, number_of_points*3, device=device)
+                            with torch.no_grad():
+                                samples, _ = edm_sampler(model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
+                            samples = samples.float()
+                            sample = samples[0].cpu().numpy()
+                            sample = sample.ravel()
                         
 
                         r_normalised = sample[1::3]
@@ -1048,7 +1056,7 @@ def validation_3D(device, sample_percent, model, aux_model, num_steps, manual_se
         
         
         
-        except KeyError:
+        except:
             pass
 
 
@@ -1062,7 +1070,7 @@ def validation_3D(device, sample_percent, model, aux_model, num_steps, manual_se
 
 
 
-def model_deployment( model_config_path, sample_percent, num_steps = None,  manual_seed = None,
+def model_deployment( model_config_path, sample_percent, aux_model_config_path = None, num_steps = None,  manual_seed = None,
                      x_foil_timeout=20, CL_tolerence = 0.01, CD_tolerence = 0.05, max_iteration = 100, mode = 'validation'):
     with open(model_config_path, "r") as f:
         model_config = yaml.safe_load(f)
@@ -1080,6 +1088,42 @@ def model_deployment( model_config_path, sample_percent, num_steps = None,  manu
     print('Model Code', model_code)
     num_components=model_config['component_number']
     
+
+
+    # ============== Auxiliary model ===============
+    if aux_model_config_path != None:
+        with open(aux_model_config_path, "r") as f:
+            aux_model_config = yaml.safe_load(f)
+
+        aux_data_structure = aux_model_config['data_structure']
+        aux_num_epochs = aux_model_config['num_epochs']
+        aux_model_channel = aux_model_config['model_channel']
+        aux_model_layer = aux_model_config['model_layer']
+        aux_model_channel_multiplication = aux_model_config['model_channel_multiplication']
+        aux_device = aux_model_config['device']
+        aux_nn_structure = aux_model_config['neural_network_sturcture']
+        aux_reduced_data_fraction = aux_model_config['reduced_data_fraction']
+        aux_model_code = f"{aux_data_structure}_{aux_nn_structure}_{aux_model_channel}_{aux_model_layer}_{len(aux_model_channel_multiplication)}_with_{aux_num_epochs}_epochs_{aux_reduced_data_fraction}_data"
+        aux_save_path = f"mdl_weight/{aux_model_code}.pth"
+        print('Auxiliary Model Code', aux_model_code)
+        aux_num_components = aux_model_config['component_number']
+
+
+        aux_model = EDM_CFG(aux_num_components, aux_num_components, cond_size=4, model_channel=aux_model_channel,
+        channel_multiply=aux_model_channel_multiplication, dim_mult_emb=4, num_blocks=aux_model_layer,
+        dropout=0, emb_type="sinusoidal", dim_mult_time=1, nn_structure=aux_nn_structure,
+        dim_mult_cond=1, cond_drop_prob=0, adaptive_scale=True, skip_scale=1.0, affine=False, data_structure=aux_data_structure, 
+        number_of_pc = aux_num_components)
+        aux_model.load_state_dict(torch.load(aux_save_path))
+        
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        aux_model = aux_model.to(device)
+
+
+
+
+
+
     if data_structure == 'pca':
         
         df = pd.read_csv("dataset/aerofoil_data_clean_normalised.csv")
@@ -1171,6 +1215,18 @@ def model_deployment( model_config_path, sample_percent, num_steps = None,  manu
         aux_model = aux_model.to(device)
 
 
+    elif data_structure == '3D_coordinates':
+
+        number_of_profiles = model_config['number_of_profiles']
+        number_of_points = model_config['number_of_points']
+        model = EDM_CFG(number_of_profiles, number_of_points, cond_size=12, model_channel=model_channel,
+                channel_multiply=model_channel_multiplication, dim_mult_emb=4, num_blocks=model_layer,
+                dropout=0, emb_type="sinusoidal", dim_mult_time=1, nn_structure=nn_structure,
+                dim_mult_cond=1, cond_drop_prob=0, adaptive_scale=True, skip_scale=1.0, affine=False, data_structure=data_structure, 
+                    number_of_pc = num_components)
+        pca = None
+        model.load_state_dict(torch.load(save_path))
+
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Total parameters: {total_params:,}")
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -1181,9 +1237,12 @@ def model_deployment( model_config_path, sample_percent, num_steps = None,  manu
     if data_structure == '1D_params':
         validation_1D(device, sample_percent, model, num_steps, manual_seed, 1, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration, model_code)
 
-    elif data_structure == '3D_coordinates' or data_structure == '3D_PCA':
+    elif data_structure == '3D_PCA':
         validation_3D(device, sample_percent, model, aux_model, num_steps, manual_seed, 1, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration,
                        pca, data_structure, model_code)
+    elif data_structure == '3D_coordinates':
+        validation_3D(device, sample_percent, model, aux_model, num_steps, manual_seed, 1, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration,
+                       pca, data_structure, model_code, number_of_profiles, number_of_points)
     else:
         model_validation(model, model_code, data_structure, device, sample_percent, pca = pca, num_steps = num_steps, 
                         manual_seed = manual_seed, x_foil_timeout = x_foil_timeout, CL_tolerence = CL_tolerence, 
@@ -1194,5 +1253,5 @@ if __name__ == "__main__":
     parser.add_argument("config", type=str, help="Path to the YAML config file")
     args = parser.parse_args()
     config_file = args.config
-    model_deployment(config_file, sample_percent = 0.2, num_steps = 100,  manual_seed = 123,
+    model_deployment(config_file, sample_percent = 0.2, aux_model_config_path='mdl_hyperparams/3D_aux.yaml', num_steps = 100,  manual_seed = 123,
                      x_foil_timeout=5, CL_tolerence = 1, CD_tolerence = 1, max_iteration = 100, mode = 'trivial')

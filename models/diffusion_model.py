@@ -71,6 +71,8 @@ class EDM_CFG(torch.nn.Module):
     def forward(self, x, sigma, class_labels=None, force_fp32=False,  **model_kwargs):
 
         x = x.to(torch.float32)  # the input noisy signal
+
+        # print(x.shape, 'hihihi')
         # sigma = sigma.to(torch.float32).reshape(-1, 1) # the noisy intensity !!!!!
 
         sigma = sigma.to(torch.float32)
@@ -86,6 +88,8 @@ class EDM_CFG(torch.nn.Module):
         F_x = self.model((x_in).to(dtype), class_labels, c_noise.flatten(), **model_kwargs)
 
         assert F_x.dtype == dtype
+
+        # print('exe', x.shape, F_x.shape) 
         D_x = c_skip * x + c_out * F_x.to(torch.float32)
         return D_x
 
@@ -118,6 +122,7 @@ class Aerofoil_Dataset(Dataset):
             name_label = self.name[idx]
             cond_data = self.cond_data[idx]
             coordinates = self.coordinates[name_label]
+            coordinates = np.expand_dims(coordinates, 0)
 
             return torch.tensor(coordinates, dtype=torch.float32), torch.tensor(cond_data, dtype=torch.float32)
 
@@ -539,18 +544,21 @@ if __name__ == '__main__':
                 
                 if not profile_has_error:
                     
-                    # profile = [profile[0], profile[-1]]  # take the first profile only
-                    
                     coordinate = np.concatenate(profile).ravel()
                     
+
                     if data_structure == '3D_PCA':
                         mode = '3D_PCA'
                         coordinates_pca.append(coordinate)
-                        
+
 
                     elif data_structure == '3D_coordinates':
                         mode = '3D_coordinates'
+                        number_of_profiles = model_config['number_of_profiles']
+                        number_of_points = model_config['number_of_points']
+                        coordinate = coordinate.reshape(number_of_profiles, number_of_points*3)
                         num_components = len(coordinate)
+
                     
                     compressor_name = f'compressor_{i}'
                     name_unique.append(compressor_name)
@@ -580,7 +588,7 @@ if __name__ == '__main__':
                 coordinates[compressor_name] = coordinates_pca[idx]
 
         cond_size = len(cond_data[0])
-        
+
 
         print(f'Model input dimension {num_components}, condition size {cond_size}')
 
@@ -640,9 +648,9 @@ if __name__ == '__main__':
     print(len(train_set), len(val_set), len(test_set))
 
     # Save the dataset division indices
-    np.save("dataset/1D_train_indices.npy", train_indices)
-    np.save("dataset/1D_val_indices.npy", val_indices)
-    np.save("dataset/1D_test_indices.npy", test_indices)
+    # np.save("dataset/1D_train_indices.npy", train_indices)
+    # np.save("dataset/1D_val_indices.npy", val_indices)
+    # np.save("dataset/1D_test_indices.npy", test_indices)
 
 
     Training = True

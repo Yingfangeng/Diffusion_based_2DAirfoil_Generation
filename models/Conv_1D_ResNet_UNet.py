@@ -253,7 +253,7 @@ class Conv1DResNetUNetCFG(nn.Module):
             idx = torch.cat([starts, ends], dim=0)
             edge[:, :, idx] = 1
             x = torch.cat([x, edge], dim=1)
-
+        # print(x.shape, 'inside the unet')3
         # First conv
         x = self.first_layer(x)
 

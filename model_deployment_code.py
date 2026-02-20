@@ -808,8 +808,25 @@ def validation_accuracy(model_config_path, file_name, band = None, mode = None, 
     unfeasible_design_number = []
     total_design_number = []
     
-    if data_structure != '1D_params':
+    if data_structure == '1D_params' or data_structure == '3D_coordinates' or data_structure == '3D_PCA':
+
+        first_variable_name = 'PR'
+        second_variable_name = 'Eta'
+        first_variable_name_latex = '$PR$'
+        second_variable_name_latex = '$\eta$'
+
+        for idx in range(len(results)):
+            unfeasible_design_number.append(results['unfeasible_design'].loc[idx])
+            total_design_number.append(results['design_iteration'].loc[idx])
+            if results['pr_actual'].loc[idx] == 999:
+                unfeasible = unfeasible + 1
+            else:
+                CL.append(results['pr_original'].loc[idx])
+                CD.append(results['eta_original'].loc[idx])
+                CL_actual.append(results['pr_actual'].loc[idx])
+                CD_actual.append(results['eta_actual'].loc[idx]) 
         
+    else:
         first_variable_name = 'CL'
         second_variable_name = 'CD'
         first_variable_name_latex = '$C_L$'
@@ -825,25 +842,6 @@ def validation_accuracy(model_config_path, file_name, band = None, mode = None, 
                 CD.append(results['CD'].loc[idx])
                 CL_actual.append(results['CL_actual'].loc[idx])
                 CD_actual.append(results['CD_actual'].loc[idx])
-    else:
-        first_variable_name = 'PR'
-        second_variable_name = 'Eta'
-        first_variable_name_latex = '$PR$'
-        second_variable_name_latex = '$\eta$'
-
-        for idx in range(len(results)):
-            unfeasible_design_number.append(results['unfeasible_design'].loc[idx])
-            total_design_number.append(results['design_iteration'].loc[idx])
-            if results['pr_actual'].loc[idx] == 999:
-                unfeasible = unfeasible + 1
-            else:
-                CL.append(results['pr_original'].loc[idx])
-                CD.append(results['eta_original'].loc[idx])
-                CL_actual.append(results['pr_actual'].loc[idx])
-                CD_actual.append(results['eta_actual'].loc[idx])   
-
-
-    
 
     CL = np.array(CL)
     CD = np.array(CD)
@@ -1947,7 +1945,7 @@ def smoothening_3D(x,y,z, poly, window):
 
 
 def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manual_seed, multiple_design, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration, 
-                  m_dot, RPM, eta, pr, pca, data_structure, off_design_plot):
+                  m_dot, RPM, eta, pr, pca, data_structure, off_design_plot, number_of_profiles = None, number_of_points = None):
 
 
     coordinate = 'polar' # polar or cartesian
@@ -2101,6 +2099,7 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                     cond = (torch.tensor([m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised]).to(device))
                     # print(m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised)
                     rnd = StackedRandomGenerator(device, range(sample_number))
+                    
                     latents = rnd.randn([sample_number, aux_model.in_dim], device=device)
                     with torch.no_grad():
                         samples, _ = edm_sampler(aux_model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
@@ -2121,17 +2120,24 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                     cond = (torch.tensor([m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised, xc_min, xc_max, r_min, r_max, theta_min, theta_max, n_blades, n_splitter]).to(device))
                     # print(m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised, xc_min, xc_max, r_min, r_max, theta_min, theta_max, n_blades, n_splitter)
                     rnd = StackedRandomGenerator(device, range(sample_number))
-                    latents = rnd.randn([sample_number, model.in_dim], device=device)
-                    with torch.no_grad():
-                        samples, _ = edm_sampler(model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
-                    samples = samples.float()
-                    sample = samples[0].cpu().numpy()
-
-
+                    
                     if data_structure == '3D_PCA':
+                        latents = rnd.randn([sample_number, model.in_dim], device=device)
+                        with torch.no_grad():
+                            samples, _ = edm_sampler(model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
+                        samples = samples.float()
+                        sample = samples[0].cpu().numpy()
                         sample = pca.inverse_transform(sample)
                     
 
+                    if data_structure == '3D_coordinates':
+                        latents = torch.randn(1, 1, number_of_profiles, number_of_points*3, device=device)
+                        with torch.no_grad():
+                            samples, _ = edm_sampler(model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
+                        samples = samples.float()
+                        sample = samples[0].cpu().numpy()
+                        sample = sample.ravel()
+                    
                     r_normalised = sample[1::3]
                     theta_normalised = sample[2::3]
                     x_normalised = sample[0::3]
@@ -2152,7 +2158,7 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                     x, y, z = cyl_to_cart_about_x(x, r, theta)
                     
                     if smoothening:
-                        x, y, z = smoothening_3D(x,y,z,3,11)
+                        x, y, z = smoothening_3D(x,y,z, 3, 11) # third order polynomial fit with window of 11
 
 
                     if round(n_blades) == 0:
@@ -2220,6 +2226,21 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
             if off_design_plot:
                 off_design_plot_1D(multiple_design_1D_geometry, m_dot, omega, pr_original, eta_original)
 
+            out_path = f'generated_compressor_3D_geometry/{m_dot:.2f}_{int(RPM)}_{pr_original:.2f}_{eta_original:.2f}_design_{design}.curve'
+            n_profiles = len(geometry[0]) // 512
+
+            with open(out_path, "w") as f:
+                for i in range(n_profiles): 
+                    x_to_store = geometry[0][i*512:(i+1)*512]
+                    y_to_store = geometry[1][i*512:(i+1)*512]
+                    z_to_store = geometry[1][i*512:(i+1)*512]
+                    profile = np.column_stack((x_to_store, y_to_store, z_to_store))
+
+                    f.write(f"# profile {i+1}\n") 
+                    np.savetxt(f, profile, fmt="%.12f")
+                    if i != n_profiles- 1:
+                        f.write("\n")
+            
             ax_3D.scatter(geometry[0], geometry[1], geometry[2], s=1)
             ax.scatter(geometry[0], ((geometry[1])**2 + (geometry[2])**2)**0.5, s=1)
             print(f'Number {design} design has blade number of {number_of_blades}.')
@@ -2247,11 +2268,13 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
 
 
 
-def model_deployment(mode, model_config_path, sample_number=1, AOA=None, Ma=None, Re=None, CL=None, CD=None, 
+def model_deployment(mode, model_config_path, aux_model_config_path = None, sample_number=1, AOA=None, Ma=None, Re=None, CL=None, CD=None, 
                      num_steps = None, fig_size = None, manual_seed = None, lim = 0.5, multiple_design = 1, 
                      x_foil_timeout=20, CL_tolerence = 0.01, CD_tolerence = 0.05, max_iteration = 100,
                      distribution_plot_switch = False, off_design_plot_switch = False, m_dot = None, RPM = None, 
                      pr = None, eta = None, convert_to_3D = False, plot_blade_distribution = True):
+    
+    # ============== Main model ===============
     with open(model_config_path, "r") as f:
         model_config = yaml.safe_load(f)
 
@@ -2265,9 +2288,44 @@ def model_deployment(mode, model_config_path, sample_number=1, AOA=None, Ma=None
     reduced_data_fraction=model_config['reduced_data_fraction']
     model_code = f"{data_structure}_{nn_structure}_{model_channel}_{model_layer}_{len(model_channel_multiplication)}_with_{num_epochs}_epochs_{reduced_data_fraction}_data"
     save_path = f"mdl_weight/{model_code}.pth"
-    print('Model Code', model_code)
+    print('Main Model Code', model_code)
     num_components=model_config['component_number']
     
+
+
+    # ============== Auxiliary model ===============
+    if aux_model_config_path != None:
+        with open(aux_model_config_path, "r") as f:
+            aux_model_config = yaml.safe_load(f)
+
+        aux_data_structure = aux_model_config['data_structure']
+        aux_num_epochs = aux_model_config['num_epochs']
+        aux_model_channel = aux_model_config['model_channel']
+        aux_model_layer = aux_model_config['model_layer']
+        aux_model_channel_multiplication = aux_model_config['model_channel_multiplication']
+        aux_device = aux_model_config['device']
+        aux_nn_structure = aux_model_config['neural_network_sturcture']
+        aux_reduced_data_fraction = aux_model_config['reduced_data_fraction']
+        aux_model_code = f"{aux_data_structure}_{aux_nn_structure}_{aux_model_channel}_{aux_model_layer}_{len(aux_model_channel_multiplication)}_with_{aux_num_epochs}_epochs_{aux_reduced_data_fraction}_data"
+        aux_save_path = f"mdl_weight/{aux_model_code}.pth"
+        print('Auxiliary Model Code', aux_model_code)
+        aux_num_components = aux_model_config['component_number']
+
+
+        aux_model = EDM_CFG(aux_num_components, aux_num_components, cond_size=4, model_channel=aux_model_channel,
+        channel_multiply=aux_model_channel_multiplication, dim_mult_emb=4, num_blocks=aux_model_layer,
+        dropout=0, emb_type="sinusoidal", dim_mult_time=1, nn_structure=aux_nn_structure,
+        dim_mult_cond=1, cond_drop_prob=0, adaptive_scale=True, skip_scale=1.0, affine=False, data_structure=aux_data_structure, 
+        number_of_pc = aux_num_components)
+        aux_model.load_state_dict(torch.load(aux_save_path))
+        
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        aux_model = aux_model.to(device)
+
+
+
+
+
     if data_structure == 'pca':
         
         df = pd.read_csv("dataset/aerofoil_data_clean_normalised.csv")
@@ -2320,15 +2378,18 @@ def model_deployment(mode, model_config_path, sample_number=1, AOA=None, Ma=None
         pca = None
         model.load_state_dict(torch.load(save_path))
 
-    elif data_structure == '3D_coordinates':
 
-        model = EDM_CFG(num_components, num_components, cond_size=10, model_channel=model_channel,
+    elif data_structure == '3D_coordinates':
+        number_of_profiles = model_config['number_of_profiles']
+        number_of_points = model_config['number_of_points']
+        model = EDM_CFG(number_of_profiles, number_of_points, cond_size=12, model_channel=model_channel,
                 channel_multiply=model_channel_multiplication, dim_mult_emb=4, num_blocks=model_layer,
                 dropout=0, emb_type="sinusoidal", dim_mult_time=1, nn_structure=nn_structure,
                 dim_mult_cond=1, cond_drop_prob=0, adaptive_scale=True, skip_scale=1.0, affine=False, data_structure=data_structure, 
                     number_of_pc = num_components)
         pca = None
         model.load_state_dict(torch.load(save_path))
+
 
     elif data_structure == '3D_PCA':
         
@@ -2358,22 +2419,16 @@ def model_deployment(mode, model_config_path, sample_number=1, AOA=None, Ma=None
         model.load_state_dict(torch.load(save_path))
 
 
-        aux_model = EDM_CFG(8, 8, cond_size=4, model_channel=model_channel,
-                channel_multiply=[1,2,4], dim_mult_emb=4, num_blocks=model_layer,
-                dropout=0, emb_type="sinusoidal", dim_mult_time=1, nn_structure=nn_structure,
-                dim_mult_cond=1, cond_drop_prob=0, adaptive_scale=True, skip_scale=1.0, affine=False, data_structure='3D_aux', 
-                    number_of_pc = 8)
-        aux_model.load_state_dict(torch.load('mdl_weight/3D_aux_ResNet_UNet_64_5_3_with_100_epochs_1_data.pth'))
-        
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        aux_model = aux_model.to(device)
-
 
     total_params = sum(p.numel() for p in model.parameters())
-    print(f"Total parameters: {total_params:,}")
+    print(f"Main model parameters: {total_params:,}")
+
+    total_params_aux = sum(p.numel() for p in aux_model.parameters())
+    print(f"Auxiliary model parameters: {total_params_aux:,}")
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
+
 
 
 
@@ -2381,10 +2436,13 @@ def model_deployment(mode, model_config_path, sample_number=1, AOA=None, Ma=None
         validation_1D(mode, device, sample_number, model, num_steps, manual_seed, multiple_design, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration,
                       m_dot, RPM, eta, pr, convert_to_3D, plot_blade_distribution)
         
-    elif data_structure == '3D_coordinates' or data_structure == '3D_PCA':
+    elif data_structure == '3D_coordinates':
+        validation_3D(mode, device, sample_number, model, aux_model, num_steps, manual_seed, multiple_design, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration,
+                      m_dot, RPM, eta, pr, pca, data_structure, off_design_plot_switch, number_of_profiles, number_of_points)
+
+    elif data_structure == '3D_PCA':
         validation_3D(mode, device, sample_number, model, aux_model, num_steps, manual_seed, multiple_design, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration,
                       m_dot, RPM, eta, pr, pca, data_structure, off_design_plot_switch)
-
 
     else:
         if mode == 'denoise_process_plot':
@@ -2394,7 +2452,7 @@ def model_deployment(mode, model_config_path, sample_number=1, AOA=None, Ma=None
             validation_plot(model, sample_number, data_structure, device, mode, pca, num_steps, manual_seed, 
                         lim, multiple_design, num_components, num_components, x_foil_timeout, CL_tolerence, 
                         CD_tolerence, max_iteration, distribution_plot_switch, off_design_plot_switch, Re, Ma, AOA, CL, CD)
-    
+
 
 
 
