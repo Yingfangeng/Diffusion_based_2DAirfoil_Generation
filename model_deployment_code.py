@@ -1947,8 +1947,6 @@ def smoothening_3D(x,y,z, poly, window):
 def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manual_seed, multiple_design, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration, 
                   m_dot, RPM, eta, pr, pca, data_structure, off_design_plot, number_of_profiles = None, number_of_points = None):
 
-
-    coordinate = 'polar' # polar or cartesian
     smoothening = False
 
     model.eval()
@@ -2070,103 +2068,78 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
 
             while not success and number_of_trials < max_iteration:
 
-                if coordinate == 'cartesian':
-                    cond = (torch.tensor([m_dot, omega,  pr, eta]).to(device))
+                # The auxiliary model, input 4 output 8
+                cond = (torch.tensor([m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised]).to(device))
+                # print(m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised)
+                rnd = StackedRandomGenerator(device, range(sample_number))
                 
-                    rnd = StackedRandomGenerator(device, range(sample_number))
-                    latents = rnd.randn([sample_number, model.in_dim], device=device)
+                latents = rnd.randn([sample_number, aux_model.in_dim], device=device)
+                with torch.no_grad():
+                    samples, _ = edm_sampler(aux_model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
+                
+                samples = samples.float()
+                sample = samples[0].cpu().numpy()
+                xc_min = sample[0]
+                xc_max = sample[1]
+                r_min = sample[2]
+                r_max = sample[3]
+                theta_min = sample[4]
+                theta_max = sample[5]
+                n_blades = sample[6]
+                n_splitter =  sample[7]
 
+                
+                # The main model
+                cond = (torch.tensor([m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised, xc_min, xc_max, r_min, r_max, theta_min, theta_max, n_blades, n_splitter]).to(device))
+                # print(m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised, xc_min, xc_max, r_min, r_max, theta_min, theta_max, n_blades, n_splitter)
+                rnd = StackedRandomGenerator(device, range(sample_number))
+                
+                if data_structure == '3D_PCA':
+                    latents = rnd.randn([sample_number, model.in_dim], device=device)
                     with torch.no_grad():
                         samples, _ = edm_sampler(model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
-
                     samples = samples.float()
                     sample = samples[0].cpu().numpy()
-                    
-                    x_normalised = sample[0::3]
-                    y_normalised = sample[1::3]
-                    z_normalised = sample[2::3]
+                    sample = pca.inverse_transform(sample)
+                
 
-                    x_coordinates = x_normalised * (x_max - x_min) + x_min
-                    y_coordinates = y_normalised * (y_max - y_min) + y_min
-                    z_coordinates = z_normalised * (z_max - z_min) + z_min
-                    ax_3D.scatter(x_coordinates, y_coordinates, z_coordinates, s=1, color='k')
-
-
-                elif coordinate == 'polar':
-                    
-                    
-                    # The first model, input 4 output 8
-                    cond = (torch.tensor([m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised]).to(device))
-                    # print(m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised)
-                    rnd = StackedRandomGenerator(device, range(sample_number))
-                    
-                    latents = rnd.randn([sample_number, aux_model.in_dim], device=device)
+                if data_structure == '3D_coordinates':
+                    latents = torch.randn(1, 1, number_of_profiles, number_of_points*3, device=device)
                     with torch.no_grad():
-                        samples, _ = edm_sampler(aux_model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
-                    
+                        samples, _ = edm_sampler(model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
                     samples = samples.float()
                     sample = samples[0].cpu().numpy()
-                    xc_min = sample[0]
-                    xc_max = sample[1]
-                    r_min = sample[2]
-                    r_max = sample[3]
-                    theta_min = sample[4]
-                    theta_max = sample[5]
-                    n_blades = sample[6]
-                    n_splitter =  sample[7]
+                    sample = sample.ravel()
+                
+                r_normalised = sample[1::3]
+                theta_normalised = sample[2::3]
+                x_normalised = sample[0::3]
+                
 
-                    
-                    # The main model
-                    cond = (torch.tensor([m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised, xc_min, xc_max, r_min, r_max, theta_min, theta_max, n_blades, n_splitter]).to(device))
-                    # print(m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised, xc_min, xc_max, r_min, r_max, theta_min, theta_max, n_blades, n_splitter)
-                    rnd = StackedRandomGenerator(device, range(sample_number))
-                    
-                    if data_structure == '3D_PCA':
-                        latents = rnd.randn([sample_number, model.in_dim], device=device)
-                        with torch.no_grad():
-                            samples, _ = edm_sampler(model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
-                        samples = samples.float()
-                        sample = samples[0].cpu().numpy()
-                        sample = pca.inverse_transform(sample)
-                    
-
-                    if data_structure == '3D_coordinates':
-                        latents = torch.randn(1, 1, number_of_profiles, number_of_points*3, device=device)
-                        with torch.no_grad():
-                            samples, _ = edm_sampler(model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
-                        samples = samples.float()
-                        sample = samples[0].cpu().numpy()
-                        sample = sample.ravel()
-                    
-                    r_normalised = sample[1::3]
-                    theta_normalised = sample[2::3]
-                    x_normalised = sample[0::3]
-                    
-
-                    r_min_denormalised = r_min * (r_min_max - r_min_min) + r_min_min
-                    r_max_denormalised = r_max * (r_max_max - r_max_min) + r_max_min
-                    theta_min_denormalised = theta_min * (theta_min_max - theta_min_min) + theta_min_min
-                    theta_max_denormalised = theta_max * (theta_max_max - theta_max_min) + theta_max_min
-                    x_min_denormalised = xc_min * (x_min_max - x_min_min) + x_min_min
-                    x_max_denormalised = xc_max * (x_max_max - x_max_min) + x_max_min
+                r_min_denormalised = r_min * (r_min_max - r_min_min) + r_min_min
+                r_max_denormalised = r_max * (r_max_max - r_max_min) + r_max_min
+                theta_min_denormalised = theta_min * (theta_min_max - theta_min_min) + theta_min_min
+                theta_max_denormalised = theta_max * (theta_max_max - theta_max_min) + theta_max_min
+                x_min_denormalised = xc_min * (x_min_max - x_min_min) + x_min_min
+                x_max_denormalised = xc_max * (x_max_max - x_max_min) + x_max_min
 
 
-                    r = r_normalised * (r_max_denormalised - r_min_denormalised) + r_min_denormalised 
-                    theta = theta_normalised * (theta_max_denormalised - theta_min_denormalised) + theta_min_denormalised 
-                    x = x_normalised * (x_max_denormalised - x_min_denormalised) + x_min_denormalised 
-    
-                    x, y, z = cyl_to_cart_about_x(x, r, theta)
-                    
-                    if smoothening:
-                        x, y, z = smoothening_3D(x,y,z, 3, 11) # third order polynomial fit with window of 11
+                r = r_normalised * (r_max_denormalised - r_min_denormalised) + r_min_denormalised 
+                theta = theta_normalised * (theta_max_denormalised - theta_min_denormalised) + theta_min_denormalised 
+                x = x_normalised * (x_max_denormalised - x_min_denormalised) + x_min_denormalised 
+
+                x, y, z = cyl_to_cart_about_x(x, r, theta)
+                
+                if smoothening:
+                    x, y, z = smoothening_3D(x,y,z, 3, 11) # third order polynomial fit with window of 11
 
 
-                    if round(n_blades) == 0:
-                        number_of_blades =10
-                    else:
-                        number_of_blades =12
+                if round(n_blades) == 0:
+                    number_of_blades =10
+                else:
+                    number_of_blades =12
 
-                    geometry_1D = geometry_3D_to_1D_conversion(x,y,z, number_of_blades, ax_3D)
+                geometry_1D = geometry_3D_to_1D_conversion(x,y,z, number_of_blades, ax_3D)
                     
                     
 
@@ -2264,6 +2237,255 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
         
         plt.show()
 
+
+
+def denoising_plot_3D(mode, device, sample_number, model, aux_model, num_steps, manual_seed, 
+                  m_dot, RPM, eta, pr, pca, data_structure, number_of_profiles = None, number_of_points = None):
+
+    smoothening = False
+
+    model.eval()
+    aux_model.eval()
+
+    df, min_max, val_indices = load_1D_dataset()
+
+
+    df_2 = pd.read_csv('dataset/1D_compressor_geometry.csv')
+    df_3 = pd.read_csv('dataset/polar_minmax_per_compressor_normalised.csv')
+    df_4 = pd.read_csv('dataset/polar_secondary_minmax.csv')
+    
+
+    r_min_min = df_4['r_min_min'].iloc[0]
+    r_min_max = df_4['r_min_max'].iloc[0]
+    r_max_min = df_4['r_max_min'].iloc[0]
+    r_max_max = df_4['r_max_max'].iloc[0]
+    theta_min_min = df_4['theta_min_min'].iloc[0]
+    theta_min_max = df_4['theta_min_max'].iloc[0]
+    theta_max_min = df_4['theta_max_min'].iloc[0]
+    theta_max_max = df_4['theta_max_max'].iloc[0]
+    x_min_min = df_4['x_min_min'].iloc[0]
+    x_min_max = df_4['x_min_max'].iloc[0]
+    x_max_min = df_4['x_max_min'].iloc[0]
+    x_max_max = df_4['x_max_max'].iloc[0]
+
+
+
+    fig_3D = plt.figure(figsize=(10, 8))
+    ax_3D = fig_3D.add_subplot(111, projection="3d")
+    fig, ax = plt.subplots()
+
+    if mode == 'denoise_process_plot_3D':
+        numbers = randomly_pick_1D_validation(manual_seed, sample_number)
+    else:
+        numbers = [0]
+
+    for idx in numbers:
+
+
+        if mode == 'denoise_process_plot_3D':
+            i = val_indices[idx]
+
+            pr_normalised = df.loc[i, 'pressure_ratio']
+            eta_normalised = df.loc[i, 'efficiency']
+            omega_normalised = df.loc[i, 'omega']
+            m_dot_normalised = df.loc[i, 'm_dot']
+            compressor_index = df_2.loc[i, 'geometry_index']
+
+            
+            row = df_3.loc[df_3['compressor_index'].astype(int) == int(compressor_index)]
+            df_3 = row.iloc[0]
+
+            r_min = df_3['r_min']
+            r_max = df_3['r_max']
+            theta_min = df_3['theta_min']
+            theta_max = df_3['theta_max']
+            xc_min = df_3['x_min']
+            xc_max = df_3['x_max']
+
+            
+        else:
+            pr_normalised, m_dot_normalised, eta_normalised, omega_normalised = test_condition_1D(m_dot, RPM, pr, eta)
+
+
+
+
+        # The auxiliary model, input 4 output 8
+        cond = (torch.tensor([m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised]).to(device))
+        # print(m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised)
+        rnd = StackedRandomGenerator(device, range(sample_number))
+        
+        latents = rnd.randn([sample_number, aux_model.in_dim], device=device)
+        with torch.no_grad():
+            samples, _ = edm_sampler(aux_model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
+        
+        samples = samples.float()
+        sample = samples[0].cpu().numpy()
+        xc_min = sample[0]
+        xc_max = sample[1]
+        r_min = sample[2]
+        r_max = sample[3]
+        theta_min = sample[4]
+        theta_max = sample[5]
+        n_blades = sample[6]
+        n_splitter =  sample[7]
+
+        r_min_denormalised = r_min * (r_min_max - r_min_min) + r_min_min
+        r_max_denormalised = r_max * (r_max_max - r_max_min) + r_max_min
+        theta_min_denormalised = theta_min * (theta_min_max - theta_min_min) + theta_min_min
+        theta_max_denormalised = theta_max * (theta_max_max - theta_max_min) + theta_max_min
+        x_min_denormalised = xc_min * (x_min_max - x_min_min) + x_min_min
+        x_max_denormalised = xc_max * (x_max_max - x_max_min) + x_max_min
+
+
+        # The main model
+        cond = (torch.tensor([m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised, xc_min, xc_max, r_min, r_max, theta_min, theta_max, n_blades, n_splitter]).to(device))
+        # print(m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised, xc_min, xc_max, r_min, r_max, theta_min, theta_max, n_blades, n_splitter)
+        rnd = StackedRandomGenerator(device, range(sample_number))
+        
+        frames = []  # store frame paths
+        frames_3D = []
+        output_dir = "fig"
+        os.makedirs(output_dir, exist_ok=True)
+
+        if data_structure == '3D_PCA':
+            latents = rnd.randn([sample_number, model.in_dim], device=device)
+            with torch.no_grad():
+                samples, trajectory = edm_sampler(model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
+            
+            for i in range(num_steps+1):
+                if i <= num_steps-1: 
+                    samples = trajectory[i]
+                else:
+                    samples = trajectory[-1]
+                samples = samples.float()
+                sample = samples[0].cpu().numpy()
+                sample = pca.inverse_transform(sample)
+                
+                
+                r_normalised = sample[1::3]
+                theta_normalised = sample[2::3]
+                x_normalised = sample[0::3]
+            
+
+                r = r_normalised * (r_max_denormalised - r_min_denormalised) + r_min_denormalised 
+                theta = theta_normalised * (theta_max_denormalised - theta_min_denormalised) + theta_min_denormalised 
+                x = x_normalised * (x_max_denormalised - x_min_denormalised) + x_min_denormalised 
+
+                x, y, z = cyl_to_cart_about_x(x, r, theta)
+                r = (y**2 + z**2)**0.5
+
+                fig, ax = plt.subplots()
+
+                ax.scatter(x, r, color = 'b', s = 1)
+                ax.set_xlabel('Axial (mm)')
+                ax.set_ylabel('Radial (mm)')
+                # ax.set_xticks([])
+                # ax.set_yticks([])
+                ax.axis('equal')
+                frame_path = f"{output_dir}/{data_structure}_frame_{i}.png"
+
+                plt.close(fig)
+                save_fig_custom(fig, file_path='fig', file_name=f'{data_structure}_frame_{i}', overwrite=True, dpi = 500)
+                frames.append(frame_path)
+                
+
+                
+
+                fig_3D = plt.figure(figsize=(10, 8))
+                ax_3D = fig_3D.add_subplot(111, projection="3d")
+                ax_3D.scatter(x, y, z, color = 'b', s = 1)
+                ax_3D.set_xlabel('X (mm)')
+                ax_3D.set_ylabel('Y (mm)')
+                ax_3D.set_zlabel('Z (mm)')
+                # ax_3D.set_xticks([])
+                # ax_3D.set_yticks([])
+                # ax_3D.set_zticks([])
+                # ax_3D.axis('equal')
+                frame_path_3D = f"{output_dir}/{data_structure}_frame_{i}_3D.png"
+
+                plt.close(fig_3D)
+                
+                save_fig_custom(fig_3D, file_path='fig', file_name=f'{data_structure}_frame_{i}_3D', overwrite=True, dpi = 500)
+                frames_3D.append(frame_path_3D)
+
+
+        if data_structure == '3D_coordinates':
+            latents = torch.randn(1, 1, number_of_profiles, number_of_points*3, device=device)
+            with torch.no_grad():
+                samples, trajectory = edm_sampler(model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
+            
+            for i in range(num_steps+1):
+                if i <= num_steps-1: 
+                    samples = trajectory[i]
+                else:
+                    samples = trajectory[-1]
+                samples = samples.float()
+                sample = samples[0].cpu().numpy()
+                sample = sample.ravel()
+                
+                r_normalised = sample[1::3]
+                theta_normalised = sample[2::3]
+                x_normalised = sample[0::3]
+            
+
+                r = r_normalised * (r_max_denormalised - r_min_denormalised) + r_min_denormalised 
+                theta = theta_normalised * (theta_max_denormalised - theta_min_denormalised) + theta_min_denormalised 
+                x = x_normalised * (x_max_denormalised - x_min_denormalised) + x_min_denormalised 
+
+                x, y, z = cyl_to_cart_about_x(x, r, theta)
+                r = (y**2 + z**2)**0.5
+
+                fig, ax = plt.subplots()
+
+                ax.scatter(x, r, color = 'b', s = 1)
+                ax.set_xlabel('Axial (mm)')
+                ax.set_ylabel('Radial (mm)')
+                # ax.set_xticks([])
+                # ax.set_yticks([])
+                ax.axis('equal')
+                frame_path = f"{output_dir}/{data_structure}_frame_{i}.png"
+
+                plt.close(fig)
+                save_fig_custom(fig, file_path='fig', file_name=f'{data_structure}_frame_{i}', overwrite=True, dpi = 500)
+                frames.append(frame_path)
+                
+
+                
+
+                fig_3D = plt.figure(figsize=(10, 8))
+                ax_3D = fig_3D.add_subplot(111, projection="3d")
+                ax_3D.scatter(x, y, z, color = 'b', s = 1)
+                ax_3D.set_xlabel('X (mm)')
+                ax_3D.set_ylabel('Y (mm)')
+                ax_3D.set_zlabel('Z (mm)')
+                # ax_3D.set_xticks([])
+                # ax_3D.set_yticks([])
+                # ax_3D.set_zticks([])
+                # ax_3D.axis('equal')
+                frame_path_3D = f"{output_dir}/{data_structure}_frame_{i}_3D.png"
+
+                plt.close(fig_3D)
+                
+                save_fig_custom(fig_3D, file_path='fig', file_name=f'{data_structure}_frame_{i}_3D', overwrite=True, dpi = 500)
+                frames_3D.append(frame_path_3D)
+        
+
+
+    gif_path = f"denoising_gif/denoising_process_{data_structure}_{num_steps}.gif"
+    with imageio.get_writer(gif_path, mode="I", duration=2.0) as writer:
+        for frame in frames:
+            writer.append_data(imageio.imread(frame))
+    print("GIF saved as:", gif_path)
+    Image(filename=gif_path)
+
+
+
+    gif_path = f"denoising_gif/denoising_process_{data_structure}_{num_steps}_3D.gif"
+    with imageio.get_writer(gif_path, mode="I", duration=2.0) as writer:
+        for frame in frames_3D:
+            writer.append_data(imageio.imread(frame))
+    print("GIF saved as:", gif_path)
+    Image(filename=gif_path)
 
 
 
@@ -2391,6 +2613,7 @@ def model_deployment(mode, model_config_path, aux_model_config_path = None, samp
         model.load_state_dict(torch.load(save_path))
 
 
+
     elif data_structure == '3D_PCA':
         
         curve_file = 'dataset/3D_compressor_polar_normalised'
@@ -2431,22 +2654,27 @@ def model_deployment(mode, model_config_path, aux_model_config_path = None, samp
 
 
 
+    if mode == 'validation' or mode == 'test':
+        if data_structure == '1D_params':
+            validation_1D(mode, device, sample_number, model, num_steps, manual_seed, multiple_design, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration,
+                        m_dot, RPM, eta, pr, convert_to_3D, plot_blade_distribution)
+            
+        elif data_structure == '3D_coordinates':
+            validation_3D(mode, device, sample_number, model, aux_model, num_steps, manual_seed, multiple_design, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration,
+                        m_dot, RPM, eta, pr, pca, data_structure, off_design_plot_switch, number_of_profiles, number_of_points)
 
-    if data_structure == '1D_params':
-        validation_1D(mode, device, sample_number, model, num_steps, manual_seed, multiple_design, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration,
-                      m_dot, RPM, eta, pr, convert_to_3D, plot_blade_distribution)
-        
-    elif data_structure == '3D_coordinates':
-        validation_3D(mode, device, sample_number, model, aux_model, num_steps, manual_seed, multiple_design, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration,
-                      m_dot, RPM, eta, pr, pca, data_structure, off_design_plot_switch, number_of_profiles, number_of_points)
-
-    elif data_structure == '3D_PCA':
-        validation_3D(mode, device, sample_number, model, aux_model, num_steps, manual_seed, multiple_design, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration,
+        elif data_structure == '3D_PCA':
+            validation_3D(mode, device, sample_number, model, aux_model, num_steps, manual_seed, multiple_design, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration,
                       m_dot, RPM, eta, pr, pca, data_structure, off_design_plot_switch)
 
     else:
         if mode == 'denoise_process_plot':
             denoise_process_plot(model, data_structure, device, sample_number, num_steps, pca, fig_size, manual_seed, num_components, num_components)
+
+        elif mode == 'denoise_process_plot_3D':
+            
+            denoising_plot_3D(mode, device, sample_number, model, aux_model, num_steps, manual_seed, 
+                  m_dot, RPM, eta, pr, pca, data_structure, 16, 512)
 
         else: 
             validation_plot(model, sample_number, data_structure, device, mode, pca, num_steps, manual_seed, 
