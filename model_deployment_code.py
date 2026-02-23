@@ -1544,6 +1544,9 @@ def off_design_plot_1D(multi_design_geometry, m_dot_design_point, omega, pr_desi
         ax2.set_ylim(0.7, 0.9)
         ax2.grid(True, ls = ':')
         ax2.legend()
+
+        save_fig_custom(fig, file_path='fig', file_name=f'off_design_pr_plot', overwrite=True, dpi = 500)
+        save_fig_custom(fig2, file_path='fig', file_name=f'off_design_eta_plot', overwrite=True, dpi = 500)
     plt.show()
 
 
@@ -1908,7 +1911,7 @@ def smoothening_3D(x,y,z, poly, window):
 
     points_per_profile = 512
     number_of_profiles = int(len(x) / points_per_profile)
-
+    
     for profile_idx in range(number_of_profiles):
         
         ps_start_index = 0 + 512*profile_idx
@@ -1933,11 +1936,205 @@ def smoothening_3D(x,y,z, poly, window):
         y_smooth = np.concatenate([y_ps_fit, y_le, y_ss_fit])
         z_smooth = np.concatenate([z_ps_fit, z_le, z_ss_fit])
         r_smooth = (y_smooth**2 + z_smooth**2)**0.5
+        
         x_smooth_list.append(x_smooth)
         y_smooth_list.append(y_smooth)
         z_smooth_list.append(z_smooth)
+        
+    x_smooth_list = np.concatenate(x_smooth_list)
+    y_smooth_list = np.concatenate(y_smooth_list)
+    z_smooth_list = np.concatenate(z_smooth_list)
 
     return x_smooth_list, y_smooth_list, z_smooth_list
+
+
+
+
+
+def create_hub_curve_file(x_hub, r_hub, r_1_tip, r_2, compressor_code, vaneless_existence = True, pinching = True):
+
+    r_3 = r_2 * 1.5 * 1000
+    extreme_value = - int(r_1_tip * 2 * 1000)
+    curve_path = f'generated_compressor_3D_geometry/{compressor_code}/Hub.curve'
+
+
+
+    # Process lines to add a zero column
+    x = x_hub
+    r = r_hub
+    
+
+    all_lines = []
+
+
+    # Use the second and third columns of the first processed line for the extreme values
+    
+    for i in range(extreme_value, 0):
+        line = f'{i}, {r[0]}, {0}\n'
+        all_lines.append(line)
+    
+    for idx, _ in enumerate(x):
+        
+        line = f'{x[idx]} {r[idx]} {0}\n'
+        all_lines.append(line)
+
+
+
+    num_extension_points = 50
+
+    if vaneless_existence and r[-1] < r_3:
+        for r_extended in np.linspace(r[-1], r_3, num_extension_points):
+            line = f"{x[-1]} {r_extended} {0}\n"
+            all_lines.append(line)
+        
+        
+    elif not vaneless_existence:
+        extension_percentage = 1.35
+        r_3 = r[-1] * extension_percentage
+        for r_extended in np.linspace(r[-1], r_3, num_extension_points):
+            line = f"{x[-1]} {r_extended} {0}\n"
+            all_lines.append(line)
+            
+
+    else:
+        print('The geometry has problem as the impeller outlet radius is greater than the vaneless diffuser. ')
+
+   
+    if pinching:
+        num_extension_points_pinching = 50
+        pinching_extension_percentage = 1.211
+
+        for r_extended in np.linspace(r_3, r_3 * pinching_extension_percentage, num_extension_points_pinching):
+
+            line = f"{x[-1]} {r_extended} {0}\n"
+            all_lines.append(line)
+        
+        print(f"Hub curve file created at {curve_path} (included pinching-related extension).")
+    else:
+        print(f"Hub curve file created at {curve_path} (pinching-related extension skipped).")
+
+
+    with open(curve_path, 'w') as file:
+        file.writelines(all_lines)
+
+    
+
+
+
+def create_shroud_curve_file(x_shroud, r_shroud, compressor_code, r_1_tip, r_2, b_2, vaneless_existence = True, pinching = True):
+    
+    r_2 = r_2 * 1000
+    b_2 = b_2 * 1000
+    r_3 = r_2 * 1.5
+    b_3 = b_2 * 0.8
+
+    extreme_value = - int(1000*r_1_tip * 2)
+
+    NUM_TAPER_POINTS   = 50      # pts for taper zone  (Δr = b₂)
+    NUM_CONST_POINTS   = 50      # pts for constant-width zone  (r₂+b₂ → r₃)
+    NUM_PAR_WALL_PTS   = 50      # pts for parallel wall when *no* vaneless
+    NUM_PINCH_PTS      = 50      # pts *excluding* the first node (so +1 later)
+
+
+    curve_path = f'generated_compressor_3D_geometry/{compressor_code}/Shroud.curve'
+
+    
+    hub_curve_path = f'generated_compressor_3D_geometry/{compressor_code}/Hub.curve'
+    
+    with open(hub_curve_path, 'r') as hf:
+        last_hub_x = float(hf.readlines()[-1].split()[0])
+
+    x = x_shroud
+    r = r_shroud
+    
+    all_lines = []
+
+
+    for i in range(extreme_value, 0):
+        line = f'{i}, {r[0]}, {0}\n'
+        all_lines.append(line)
+
+
+    for idx, _ in enumerate(x):
+        line = f'{x[idx]} {r[idx]} {0}\n'
+        all_lines.append(line)
+
+
+
+    if vaneless_existence and r[-1] < r_3:
+
+        taper_end_radius = r[-1] + b_2
+        taper_end_radius = min(taper_end_radius, r_3)
+
+        Δr_taper  = taper_end_radius - r[-1]
+        Δx_total  = b_2 - b_3
+
+        Δx_total  = Δx_total * (Δr_taper / b_2) # ???
+        Δr_step   = Δr_taper / NUM_TAPER_POINTS
+        Δx_step   = Δx_total / NUM_TAPER_POINTS
+
+        
+        for i in range(1, NUM_TAPER_POINTS + 1):
+            new_r = r[-1] + i * Δr_step
+            new_x = x[-1] + i * Δx_step
+            all_lines.append(f"{new_x} {new_r} {0}\n")
+
+        # update “current” position after taper
+        x_s_current = x[-1] + Δx_total
+        r_s_current  = taper_end_radius
+
+       
+        if r_s_current < r_3:
+            Δr_const  = r_3 - r_s_current
+            Δr_step_c = Δr_const / NUM_CONST_POINTS
+
+            
+            for i in range(1, NUM_CONST_POINTS + 1):
+                new_r = r_s_current + i * Δr_step_c
+                all_lines.append(f"{x_s_current} {new_r} {0}\n")
+            r_s_current = new_r
+            
+
+    else:
+
+        extended_r1 = r_s_current * 1.35
+        Δr_pw = (extended_r1 - r_s_current) / NUM_PAR_WALL_PTS
+
+        for i in range(1, NUM_PAR_WALL_PTS + 1):
+            new_r = r_s_current + i * Δr_pw
+            all_lines.append(f"{x_s_current} {new_r} {0}\n")
+
+        r_s_current = extended_r1   # for pinching later
+
+
+
+    if pinching:
+        r_s_end = r_s_current * 1.211
+        area_ratio = 0.4
+
+        x_h = last_hub_x
+        x_s_end = x_h + (r_s_current * (x_s_current - x_h) * area_ratio) / r_s_end
+
+        num_total = NUM_PINCH_PTS + 1
+
+        for i in range(num_total + 1):
+            t = i / num_total
+            r = r_s_current + (r_s_end - r_s_current) * t
+            x = x_s_current + (x_s_end - x_s_current) * (1 - math.cos(math.pi * t)) / 2
+            all_lines.append(f"{x} {r} {0}\n")
+        print(f"Shroud curve file created at {curve_path} (included pinching phase).")
+    else:
+        print(f"Shroud curve file created at {curve_path} (pinching phase skipped).")
+
+
+    with open(curve_path, 'w') as f_out:
+        f_out.writelines(all_lines)
+
+
+
+
+
+
 
 
 
@@ -1959,12 +2156,7 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
     df_2 = pd.read_csv('dataset/1D_compressor_geometry.csv')
     df_3 = pd.read_csv('dataset/polar_minmax_per_compressor_normalised.csv')
     df_4 = pd.read_csv('dataset/polar_secondary_minmax.csv')
-    x_max = geometry_min_max['x_max'].iloc[0]
-    x_min = geometry_min_max['x_min'].iloc[0]
-    y_max = geometry_min_max['y_max'].iloc[0]
-    y_min = geometry_min_max['y_min'].iloc[0]
-    z_max = geometry_min_max['z_max'].iloc[0]
-    z_min = geometry_min_max['z_min'].iloc[0]
+
 
 
     r_min_min = df_4['r_min_min'].iloc[0]
@@ -2003,8 +2195,6 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
             eta_normalised = df.loc[i, 'efficiency']
             omega_normalised = df.loc[i, 'omega']
             m_dot_normalised = df.loc[i, 'm_dot']
-            n_blades_normalised = df.loc[i, 'nblades']
-            n_splitter_normalised = df.loc[i, 'n_splitter_blades']
             compressor_index = df_2.loc[i, 'geometry_index']
 
             
@@ -2196,17 +2386,29 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
             multiple_design_1D_geometry.append(geometry_1D)
             multiple_design_blade_number.append(number_of_blades)
 
-            if off_design_plot:
-                off_design_plot_1D(multiple_design_1D_geometry, m_dot, omega, pr_original, eta_original)
-
-            out_path = f'generated_compressor_3D_geometry/{m_dot:.2f}_{int(RPM)}_{pr_original:.2f}_{eta_original:.2f}_design_{design}.curve'
+            compressor_code = f'{m_dot:.2f}_{int(RPM)}_{pr_original:.2f}_{eta_original:.2f}_design_{design}'
+            out_path = f'generated_compressor_3D_geometry/{m_dot:.2f}_{int(RPM)}_{pr_original:.2f}_{eta_original:.2f}_design_{design}'
+            os.makedirs(out_path, exist_ok=True)
+            out_path = f'{out_path}/Main_blade.curve'
+            print(f'Generated geometry saved to {out_path}')
             n_profiles = len(geometry[0]) // 512
 
+            # write the blade profile curve file
             with open(out_path, "w") as f:
                 for i in range(n_profiles): 
                     x_to_store = geometry[0][i*512:(i+1)*512]
                     y_to_store = geometry[1][i*512:(i+1)*512]
-                    z_to_store = geometry[1][i*512:(i+1)*512]
+                    z_to_store = geometry[2][i*512:(i+1)*512]
+
+                    if i == 0:
+                        x_hub = x_to_store[:250][::-1]
+                        r_hub = ((y_to_store[:250][::-1])**2 + (z_to_store[:250][::-1])**2)**0.5
+
+                    elif i == n_profiles-1:
+                        
+                        x_tip = x_to_store[:247][::-1]
+                        r_tip = ((y_to_store[:247][::-1])**2 + (z_to_store[:247][::-1])**2)**0.5
+
                     profile = np.column_stack((x_to_store, y_to_store, z_to_store))
 
                     f.write(f"# profile {i+1}\n") 
@@ -2214,10 +2416,23 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                     if i != n_profiles- 1:
                         f.write("\n")
             
+            # write the hub and shroud curve files
+            r_1_tip = geometry_1D['R_tip_1']
+            r_2 = geometry_1D['R_mean_2']
+            b_2 = geometry_1D['b_2']
+            print(geometry_1D['beta_b1_hub'])
+            print(geometry_1D['beta_b1_tip'])
+            create_hub_curve_file(x_hub, r_hub, r_1_tip, r_2, compressor_code, vaneless_existence = True, pinching = True)
+            create_shroud_curve_file(x_tip, r_tip, compressor_code, r_1_tip, r_2, b_2, vaneless_existence = True, pinching = True)
+
+
             ax_3D.scatter(geometry[0], geometry[1], geometry[2], s=1)
             ax.scatter(geometry[0], ((geometry[1])**2 + (geometry[2])**2)**0.5, s=1)
             print(f'Number {design} design has blade number of {number_of_blades}.')
-            
+        
+
+        if off_design_plot:
+                off_design_plot_1D(multiple_design_1D_geometry, m_dot, omega, pr_original, eta_original)
         ax.axis('equal')
         ax.grid(True, ls=':')
         ax.text(0.27, 1.08, fr'$\dot{{m}}$: {m_dot:.2f} Kg/s   '
@@ -2235,6 +2450,8 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
         ax_3D.set_ylabel('Y (mm)')
         ax_3D.set_zlabel('Z (mm)')
         
+        save_fig_custom(fig_3D, file_path='fig', file_name=f'3D_view_{m_dot:.2f}_{int(RPM)}_{pr_original:.2f}_{eta_original:.2f}', overwrite=True, dpi = 500)
+        save_fig_custom(fig, file_path='fig', file_name=f'Meridional_view_{m_dot:.2f}_{int(RPM)}_{pr_original:.2f}_{eta_original:.2f}', overwrite=True, dpi = 500)
         plt.show()
 
 
