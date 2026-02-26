@@ -9,7 +9,7 @@ import re
 import random
 import yaml
 from scipy.stats import gaussian_kde
-import imageio
+import imageio.v2 as imageio
 import os
 from IPython.display import Image
 from matplotlib import rcParams
@@ -22,12 +22,13 @@ import signal
 import contextlib
 from contextlib import redirect_stdout
 from scipy.signal import savgol_filter
+import logging
 
 
 from models.diffusion_model import EDM_CFG, edm_sampler, StackedRandomGenerator
 from meanline.impeller import Blade_Forming_3D
 
-
+logging.getLogger("PIL").setLevel(logging.WARNING)
 text_font = 'Liberation Sans'
 math_font = 'stix'
 
@@ -1058,6 +1059,33 @@ def training_data_reduction_plot():
 
 
 
+def save_denoising_gif(gif_path, frames, frame_duration=0.1, pause_time=2.0):
+    images, shapes = [], []
+
+    for f in frames:
+        im = imageio.imread(f) if isinstance(f, (str, os.PathLike)) else np.asarray(f)
+        if im.ndim == 3 and im.shape[2] == 4:
+            im = im[:, :, :3]
+        images.append(im)
+        shapes.append(im.shape)
+
+    max_h = max(s[0] for s in shapes)
+    max_w = max(s[1] for s in shapes)
+
+    padded = []
+    for im in images:
+        h, w = im.shape[:2]
+        padded.append(np.pad(im, ((0, max_h-h), (0, max_w-w), (0, 0)),
+                             mode="constant", constant_values=255))
+
+    # per-frame durations (seconds)
+    durations = [frame_duration] * len(padded)
+    durations[-1] = pause_time
+
+    imageio.mimsave(gif_path, padded, duration=durations, loop=0)
+    print("GIF saved as:", gif_path)
+
+
 
 
 
@@ -1911,13 +1939,15 @@ def smoothening_3D(x,y,z, poly, window):
 
     points_per_profile = 512
     number_of_profiles = int(len(x) / points_per_profile)
-    
+
+
     for profile_idx in range(number_of_profiles):
         
         ps_start_index = 0 + 512*profile_idx
-        ps_end_index = 251 + 512*profile_idx
-        ss_start_index = ps_end_index + 11
-        ss_end_index = 511 + 512*profile_idx
+        ps_end_index = 249 + 512*profile_idx
+        ss_start_index = ps_end_index + 13
+        ss_end_index = 512 + 512*profile_idx
+
 
         x_ps_fit = savgol_filter(x[ps_start_index:ps_end_index], window, poly)
         y_ps_fit = savgol_filter(y[ps_start_index:ps_end_index], window, poly)
@@ -1969,7 +1999,7 @@ def create_hub_curve_file(x_hub, r_hub, r_1_tip, r_2, compressor_code, vaneless_
 
     # Use the second and third columns of the first processed line for the extreme values
     
-    for i in range(extreme_value, 0):
+    for i in np.arange(extreme_value, 1, 1):
         line = f'{i}, {r[0]}, {0}\n'
         all_lines.append(line)
     
@@ -2050,7 +2080,7 @@ def create_shroud_curve_file(x_shroud, r_shroud, compressor_code, r_1_tip, r_2, 
     all_lines = []
 
 
-    for i in range(extreme_value, 0):
+    for i in np.arange(extreme_value, 1, 1):
         line = f'{i}, {r[0]}, {0}\n'
         all_lines.append(line)
 
@@ -2142,9 +2172,8 @@ def create_shroud_curve_file(x_shroud, r_shroud, compressor_code, r_1_tip, r_2, 
 
 
 def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manual_seed, multiple_design, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration, 
-                  m_dot, RPM, eta, pr, pca, data_structure, off_design_plot, number_of_profiles = None, number_of_points = None):
+                  m_dot, RPM, eta, pr, pca, data_structure, off_design_plot, number_of_profiles = None, number_of_points = None, smoothening = False):
 
-    smoothening = False
 
     model.eval()
     aux_model.eval()
@@ -2321,8 +2350,9 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                 x, y, z = cyl_to_cart_about_x(x, r, theta)
                 
                 if smoothening:
+                    print('Smoothening is enabled')
                     x, y, z = smoothening_3D(x,y,z, 3, 11) # third order polynomial fit with window of 11
-
+                print(len(x), 'length of x')
 
                 if round(n_blades) == 0:
                     number_of_blades =10
@@ -2392,13 +2422,19 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
             out_path = f'{out_path}/Main_blade.curve'
             print(f'Generated geometry saved to {out_path}')
             n_profiles = len(geometry[0]) // 512
-
+            print(n_profiles, 'profiles')
             # write the blade profile curve file
             with open(out_path, "w") as f:
                 for i in range(n_profiles): 
                     x_to_store = geometry[0][i*512:(i+1)*512]
                     y_to_store = geometry[1][i*512:(i+1)*512]
                     z_to_store = geometry[2][i*512:(i+1)*512]
+
+
+                    ax_3D.plot(x_to_store, y_to_store, z_to_store, markersize=1)
+                    ax.plot(x_to_store, (y_to_store**2 + z_to_store**2)**0.5, markersize=1)
+
+
 
                     if i == 0:
                         x_hub = x_to_store[:250][::-1]
@@ -2426,8 +2462,8 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
             create_shroud_curve_file(x_tip, r_tip, compressor_code, r_1_tip, r_2, b_2, vaneless_existence = True, pinching = True)
 
 
-            ax_3D.scatter(geometry[0], geometry[1], geometry[2], s=1)
-            ax.scatter(geometry[0], ((geometry[1])**2 + (geometry[2])**2)**0.5, s=1)
+            # ax_3D.scatter(geometry[0], geometry[1], geometry[2], s=1)
+            # ax.scatter(geometry[0], ((geometry[1])**2 + (geometry[2])**2)**0.5, s=1)
             print(f'Number {design} design has blade number of {number_of_blades}.')
         
 
@@ -2459,7 +2495,7 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
 def denoising_plot_3D(mode, device, sample_number, model, aux_model, num_steps, manual_seed, 
                   m_dot, RPM, eta, pr, pca, data_structure, number_of_profiles = None, number_of_points = None):
 
-    smoothening = False
+
 
     model.eval()
     aux_model.eval()
@@ -2486,10 +2522,6 @@ def denoising_plot_3D(mode, device, sample_number, model, aux_model, num_steps, 
     x_max_max = df_4['x_max_max'].iloc[0]
 
 
-
-    fig_3D = plt.figure(figsize=(10, 8))
-    ax_3D = fig_3D.add_subplot(111, projection="3d")
-    fig, ax = plt.subplots()
 
     if mode == 'denoise_process_plot_3D':
         numbers = randomly_pick_1D_validation(manual_seed, sample_number)
@@ -2523,7 +2555,8 @@ def denoising_plot_3D(mode, device, sample_number, model, aux_model, num_steps, 
         else:
             pr_normalised, m_dot_normalised, eta_normalised, omega_normalised = test_condition_1D(m_dot, RPM, pr, eta)
 
-
+        output_dir = "fig"
+        os.makedirs(output_dir, exist_ok=True)
 
 
         # The auxiliary model, input 4 output 8
@@ -2533,7 +2566,7 @@ def denoising_plot_3D(mode, device, sample_number, model, aux_model, num_steps, 
         
         latents = rnd.randn([sample_number, aux_model.in_dim], device=device)
         with torch.no_grad():
-            samples, _ = edm_sampler(aux_model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
+            samples, trajectory = edm_sampler(aux_model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
         
         samples = samples.float()
         sample = samples[0].cpu().numpy()
@@ -2554,6 +2587,39 @@ def denoising_plot_3D(mode, device, sample_number, model, aux_model, num_steps, 
         x_max_denormalised = xc_max * (x_max_max - x_max_min) + x_max_min
 
 
+
+        headers = ["X_min", "X_max", "R_min", "R_max", "Theta_min", "Theta_max", "Main Blade Number", "Splitter Blade Number"]
+        frames_number = []
+        for i in range(num_steps+1):
+            if i <= num_steps-1: 
+                samples = trajectory[i]
+            else:
+                samples = trajectory[-1]
+            
+            samples = samples.float()
+            sample = samples[0].cpu().numpy()
+            
+            fig, ax = plt.subplots(figsize=(23, 2))
+            
+            ax.axis('off')
+            row = [sample[0], sample[1], sample[2], sample[3], sample[4], sample[5], sample[6], sample[7]]
+            table = ax.table(cellText=[row], colLabels=headers, loc='center', cellLoc='center')
+            table.auto_set_font_size(False)
+            table.set_fontsize(15)
+            table.scale(1, 2.5)
+
+            frame_path_number = f"{output_dir}/{data_structure}_frame_{i}_number.png"
+            plt.close(fig)
+            save_fig_custom(fig, file_path='fig', file_name=f'{data_structure}_frame_{i}_number', overwrite=True, dpi = 500)
+            frames_number.append(frame_path_number)
+
+
+        gif_path = f"denoising_gif/denoising_process_{data_structure}_{num_steps}_number.gif"
+        save_denoising_gif(gif_path, frames_number)
+
+
+
+
         # The main model
         cond = (torch.tensor([m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised, xc_min, xc_max, r_min, r_max, theta_min, theta_max, n_blades, n_splitter]).to(device))
         # print(m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised, xc_min, xc_max, r_min, r_max, theta_min, theta_max, n_blades, n_splitter)
@@ -2561,8 +2627,8 @@ def denoising_plot_3D(mode, device, sample_number, model, aux_model, num_steps, 
         
         frames = []  # store frame paths
         frames_3D = []
-        output_dir = "fig"
-        os.makedirs(output_dir, exist_ok=True)
+        frames_3D_norm = []
+        
 
         if data_structure == '3D_PCA':
             latents = rnd.randn([sample_number, model.in_dim], device=device)
@@ -2593,12 +2659,12 @@ def denoising_plot_3D(mode, device, sample_number, model, aux_model, num_steps, 
 
                 fig, ax = plt.subplots()
 
-                ax.scatter(x, r, color = 'b', s = 1)
-                ax.set_xlabel('Axial (mm)')
-                ax.set_ylabel('Radial (mm)')
-                # ax.set_xticks([])
-                # ax.set_yticks([])
-                ax.axis('equal')
+                ax.scatter(x_normalised, r_normalised, color = 'b', s = 1)
+                ax.set_xlabel('Axial')
+                ax.set_ylabel('Radial')
+                ax.set_xlim(-0.1,1.1)
+                ax.set_ylim(-0.1,1.1)
+                ax.grid(True, ls=':')
                 frame_path = f"{output_dir}/{data_structure}_frame_{i}.png"
 
                 plt.close(fig)
@@ -2607,23 +2673,36 @@ def denoising_plot_3D(mode, device, sample_number, model, aux_model, num_steps, 
                 
 
                 
-
                 fig_3D = plt.figure(figsize=(10, 8))
                 ax_3D = fig_3D.add_subplot(111, projection="3d")
+
                 ax_3D.scatter(x, y, z, color = 'b', s = 1)
                 ax_3D.set_xlabel('X (mm)')
                 ax_3D.set_ylabel('Y (mm)')
                 ax_3D.set_zlabel('Z (mm)')
-                # ax_3D.set_xticks([])
-                # ax_3D.set_yticks([])
-                # ax_3D.set_zticks([])
-                # ax_3D.axis('equal')
-                frame_path_3D = f"{output_dir}/{data_structure}_frame_{i}_3D.png"
-
-                plt.close(fig_3D)
                 
+                frame_path_3D = f"{output_dir}/{data_structure}_frame_{i}_3D.png"
+                plt.close(fig_3D)
                 save_fig_custom(fig_3D, file_path='fig', file_name=f'{data_structure}_frame_{i}_3D', overwrite=True, dpi = 500)
                 frames_3D.append(frame_path_3D)
+
+
+                fig_3D_norm = plt.figure(figsize=(10, 8))
+                ax_3D_norm = fig_3D_norm.add_subplot(111, projection="3d")
+
+                ax_3D_norm.scatter(x_normalised, r_normalised, theta_normalised, color = 'b', s = 1)
+                ax_3D_norm.set_xlabel('X')
+                ax_3D_norm.set_ylabel('R')
+                ax_3D_norm.set_zlabel('Theta')
+                ax_3D_norm.set_xlim(0,1)
+                ax_3D_norm.set_ylim(0,1)
+                ax_3D_norm.set_zlim(0,1)
+
+
+                frame_path_3D_norm = f"{output_dir}/{data_structure}_frame_{i}_3D_norm.png"
+                plt.close(fig_3D_norm)
+                save_fig_custom(fig_3D_norm, file_path='fig', file_name=f'{data_structure}_frame_{i}_3D_norm', overwrite=True, dpi = 500)
+                frames_3D_norm.append(frame_path_3D_norm)
 
 
         if data_structure == '3D_coordinates':
@@ -2654,16 +2733,17 @@ def denoising_plot_3D(mode, device, sample_number, model, aux_model, num_steps, 
 
                 fig, ax = plt.subplots()
 
-                ax.scatter(x, r, color = 'b', s = 1)
-                ax.set_xlabel('Axial (mm)')
-                ax.set_ylabel('Radial (mm)')
-                # ax.set_xticks([])
-                # ax.set_yticks([])
-                ax.axis('equal')
+                ax.scatter(x_normalised, r_normalised, color = 'b', s = 1)
+                ax.set_xlabel('Axial')
+                ax.set_ylabel('Radial')
+                ax.set_xlim(-0.1,1.1)
+                ax.set_ylim(-0.1,1.1)
+
+                ax.grid(True, ls=':')
                 frame_path = f"{output_dir}/{data_structure}_frame_{i}.png"
 
                 plt.close(fig)
-                save_fig_custom(fig, file_path='fig', file_name=f'{data_structure}_frame_{i}', overwrite=True, dpi = 500)
+                save_fig_custom(fig, file_path='fig', file_name=f'{data_structure}_frame_{i}', overwrite=True, dpi = 200)
                 frames.append(frame_path)
                 
 
@@ -2675,35 +2755,42 @@ def denoising_plot_3D(mode, device, sample_number, model, aux_model, num_steps, 
                 ax_3D.set_xlabel('X (mm)')
                 ax_3D.set_ylabel('Y (mm)')
                 ax_3D.set_zlabel('Z (mm)')
-                # ax_3D.set_xticks([])
-                # ax_3D.set_yticks([])
-                # ax_3D.set_zticks([])
-                # ax_3D.axis('equal')
+
                 frame_path_3D = f"{output_dir}/{data_structure}_frame_{i}_3D.png"
 
                 plt.close(fig_3D)
                 
-                save_fig_custom(fig_3D, file_path='fig', file_name=f'{data_structure}_frame_{i}_3D', overwrite=True, dpi = 500)
+                save_fig_custom(fig_3D, file_path='fig', file_name=f'{data_structure}_frame_{i}_3D', overwrite=True, dpi = 200)
                 frames_3D.append(frame_path_3D)
-        
+                
+
+                fig_3D_norm = plt.figure(figsize=(10, 8))
+                ax_3D_norm = fig_3D_norm.add_subplot(111, projection="3d")
+
+                ax_3D_norm.scatter(x_normalised, r_normalised, theta_normalised, color = 'b', s = 1)
+                ax_3D_norm.set_xlabel('X')
+                ax_3D_norm.set_ylabel('R')
+                ax_3D_norm.set_zlabel('Theta')
+                ax_3D_norm.set_xlim(0,1)
+                ax_3D_norm.set_ylim(0,1)
+                ax_3D_norm.set_zlim(0,1)
+
+
+                frame_path_3D_norm = f"{output_dir}/{data_structure}_frame_{i}_3D_norm.png"
+                plt.close(fig_3D_norm)
+                save_fig_custom(fig_3D_norm, file_path='fig', file_name=f'{data_structure}_frame_{i}_3D_norm', overwrite=True, dpi = 200)
+                frames_3D_norm.append(frame_path_3D_norm)
 
 
     gif_path = f"denoising_gif/denoising_process_{data_structure}_{num_steps}.gif"
-    with imageio.get_writer(gif_path, mode="I", duration=2.0) as writer:
-        for frame in frames:
-            writer.append_data(imageio.imread(frame))
-    print("GIF saved as:", gif_path)
-    Image(filename=gif_path)
-
-
+    save_denoising_gif(gif_path, frames)
 
     gif_path = f"denoising_gif/denoising_process_{data_structure}_{num_steps}_3D.gif"
-    with imageio.get_writer(gif_path, mode="I", duration=2.0) as writer:
-        for frame in frames_3D:
-            writer.append_data(imageio.imread(frame))
-    print("GIF saved as:", gif_path)
-    Image(filename=gif_path)
+    save_denoising_gif(gif_path, frames_3D)
 
+
+    gif_path = f"denoising_gif/denoising_process_{data_structure}_{num_steps}_3D_norm.gif"
+    save_denoising_gif(gif_path, frames_3D_norm)
 
 
 
@@ -2711,7 +2798,7 @@ def model_deployment(mode, model_config_path, aux_model_config_path = None, samp
                      num_steps = None, fig_size = None, manual_seed = None, lim = 0.5, multiple_design = 1, 
                      x_foil_timeout=20, CL_tolerence = 0.01, CD_tolerence = 0.05, max_iteration = 100,
                      distribution_plot_switch = False, off_design_plot_switch = False, m_dot = None, RPM = None, 
-                     pr = None, eta = None, convert_to_3D = False, plot_blade_distribution = True):
+                     pr = None, eta = None, convert_to_3D = False, plot_blade_distribution = True, smoothening = False):
     
     # ============== Main model ===============
     with open(model_config_path, "r") as f:
@@ -2878,7 +2965,7 @@ def model_deployment(mode, model_config_path, aux_model_config_path = None, samp
             
         elif data_structure == '3D_coordinates':
             validation_3D(mode, device, sample_number, model, aux_model, num_steps, manual_seed, multiple_design, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration,
-                        m_dot, RPM, eta, pr, pca, data_structure, off_design_plot_switch, number_of_profiles, number_of_points)
+                        m_dot, RPM, eta, pr, pca, data_structure, off_design_plot_switch, number_of_profiles, number_of_points, smoothening)
 
         elif data_structure == '3D_PCA':
             validation_3D(mode, device, sample_number, model, aux_model, num_steps, manual_seed, multiple_design, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration,

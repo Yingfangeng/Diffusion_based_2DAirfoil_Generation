@@ -1250,8 +1250,10 @@ def model_deployment( model_config_path, sample_percent, aux_model_config_path =
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run diffusion model with YAML config.")
-    parser.add_argument("config", type=str, help="Path to the YAML config file")
+    parser.add_argument("main_model_config", type=str, help="Path to the YAML config file")
+    parser.add_argument("aux_model_config", type=str, help="Path to the YAML config file")
     args = parser.parse_args()
-    config_file = args.config
-    model_deployment(config_file, sample_percent = 0.2, aux_model_config_path='mdl_hyperparams/3D_aux.yaml', num_steps = 100,  manual_seed = 123,
+    config_file_main = args.main_model_config
+    config_file_aux = args.aux_model_config
+    model_deployment(config_file_main, sample_percent = 0.2, aux_model_config_path=config_file_aux, num_steps = 100,  manual_seed = 123,
                      x_foil_timeout=5, CL_tolerence = 1, CD_tolerence = 1, max_iteration = 100, mode = 'trivial')
