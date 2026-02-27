@@ -29,6 +29,7 @@ from models.diffusion_model import EDM_CFG, edm_sampler, StackedRandomGenerator
 from meanline.impeller import Blade_Forming_3D
 
 logging.getLogger("PIL").setLevel(logging.WARNING)
+logging.getLogger("matplotlib").setLevel(logging.WARNING)
 text_font = 'Liberation Sans'
 math_font = 'stix'
 
@@ -1013,13 +1014,13 @@ def training_data_reduction_plot():
     average_design_trials_list = []
     total_unfeasible_design_percent_list = []
     total_training_data = []
-    data_percentage_list = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10,5,1]
+    data_percentage_list = [100, 75, 50, 25]
     
     for data_percentage in data_percentage_list:
         with open(os.devnull, 'w') as f:
             with redirect_stdout(f):
-                pr_rsme, eta_rsme, final_unfeasible_percent, average_design_trials, total_unfeasible_design_percent = validation_accuracy(model_config_path=f'mdl_hyperparams/1D_params_unet_{data_percentage}.yaml', 
-                                file_name = f'mdl_validation/1D_params_ResNet_UNet_64_5_4_with_100_epochs_{data_percentage/100:g}_data.csv',
+                pr_rsme, eta_rsme, final_unfeasible_percent, average_design_trials, total_unfeasible_design_percent = validation_accuracy(model_config_path=f'mdl_hyperparams/3D_coords_conv_2d_unet_{data_percentage}.yaml', 
+                                file_name = f'mdl_validation/3D_coordinates_ResNet_UNet_2D_64_5_4_with_300_epochs_{data_percentage/100:g}_data.csv',
                                 band = 0.1, mode = 'scatter', CL_axis_min=1, CL_axis_max=4, CD_axis_min=0.75, CD_axis_max=0.9)
         pr_rsme_list.append(pr_rsme*100)
         eta_rsme_list.append(eta_rsme*100)
@@ -2224,6 +2225,10 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
             eta_normalised = df.loc[i, 'efficiency']
             omega_normalised = df.loc[i, 'omega']
             m_dot_normalised = df.loc[i, 'm_dot']
+            n_blades = df.loc[i, 'nblades']
+            n_splitter = df.loc[i, 'n_splitter_blades']
+
+
             compressor_index = df_2.loc[i, 'geometry_index']
 
             
@@ -2236,6 +2241,9 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
             theta_max = df_3['theta_max']
             xc_min = df_3['x_min']
             xc_max = df_3['x_max']
+
+
+
             original_profiles, profile_has_error = load_blade_curve(f'dataset/3D_compressor_polar_normalised/compressor_{compressor_index}.curve')
             if profile_has_error:
                 print('This profile has error!')
@@ -2259,8 +2267,8 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                 x, y, z = cyl_to_cart_about_x(x, r, theta)
                 
                 
-                # ax_3D.plot(x, y, z, color='r')
-                # ax.scatter(x, (y**2 + z**2)**0.5, s = 1, color = 'r')
+                ax_3D.plot(x, y, z, color='r')
+                ax.scatter(x, (y**2 + z**2)**0.5, s = 1, color = 'r')
 
         else:
             pr_normalised, m_dot_normalised, eta_normalised, omega_normalised = test_condition_1D(m_dot, RPM, pr, eta)
@@ -2288,24 +2296,24 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
             while not success and number_of_trials < max_iteration:
 
                 # The auxiliary model, input 4 output 8
-                cond = (torch.tensor([m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised]).to(device))
-                # print(m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised)
-                rnd = StackedRandomGenerator(device, range(sample_number))
+                # cond = (torch.tensor([m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised]).to(device))
+                # # print(m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised)
+                # rnd = StackedRandomGenerator(device, range(sample_number))
                 
-                latents = rnd.randn([sample_number, aux_model.in_dim], device=device)
-                with torch.no_grad():
-                    samples, _ = edm_sampler(aux_model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
+                # latents = rnd.randn([sample_number, aux_model.in_dim], device=device)
+                # with torch.no_grad():
+                #     samples, _ = edm_sampler(aux_model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
                 
-                samples = samples.float()
-                sample = samples[0].cpu().numpy()
-                xc_min = sample[0]
-                xc_max = sample[1]
-                r_min = sample[2]
-                r_max = sample[3]
-                theta_min = sample[4]
-                theta_max = sample[5]
-                n_blades = sample[6]
-                n_splitter =  sample[7]
+                # samples = samples.float()
+                # sample = samples[0].cpu().numpy()
+                # xc_min = sample[0]
+                # xc_max = sample[1]
+                # r_min = sample[2]
+                # r_max = sample[3]
+                # theta_min = sample[4]
+                # theta_max = sample[5]
+                # n_blades = sample[6]
+                # n_splitter =  sample[7]
 
                 
                 # The main model
@@ -2431,8 +2439,8 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                     z_to_store = geometry[2][i*512:(i+1)*512]
 
 
-                    ax_3D.plot(x_to_store, y_to_store, z_to_store, markersize=1)
-                    ax.plot(x_to_store, (y_to_store**2 + z_to_store**2)**0.5, markersize=1)
+                    # ax_3D.plot(x_to_store, y_to_store, z_to_store, markersize=1)
+                    # ax.plot(x_to_store, (y_to_store**2 + z_to_store**2)**0.5, markersize=1)
 
 
 
@@ -2462,8 +2470,8 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
             create_shroud_curve_file(x_tip, r_tip, compressor_code, r_1_tip, r_2, b_2, vaneless_existence = True, pinching = True)
 
 
-            # ax_3D.scatter(geometry[0], geometry[1], geometry[2], s=1)
-            # ax.scatter(geometry[0], ((geometry[1])**2 + (geometry[2])**2)**0.5, s=1)
+            ax_3D.scatter(geometry[0], geometry[1], geometry[2], s=1)
+            ax.scatter(geometry[0], ((geometry[1])**2 + (geometry[2])**2)**0.5, s=1)
             print(f'Number {design} design has blade number of {number_of_blades}.')
         
 

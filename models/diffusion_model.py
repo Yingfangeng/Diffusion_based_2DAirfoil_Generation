@@ -600,17 +600,7 @@ if __name__ == '__main__':
     
     
     
-    
-    
     print('passed dataset initialisation')
-
-    # generator = torch.Generator().manual_seed(0)
-    # n = len(dataset)
-    # n_train = int(train_val_division * n)
-    # train_set, val_set = torch.utils.data.random_split(dataset, [n_train, n - n_train], generator=generator)
-    # print('passed data division')
-    # np.save("dataset/1D_val_indices.npy", val_set.indices)
-    # np.save("dataset/1D_train_indices.npy", train_set.indices)
 
 
 
@@ -648,9 +638,9 @@ if __name__ == '__main__':
     print(len(train_set), len(val_set), len(test_set))
 
     # Save the dataset division indices
-    # np.save("dataset/1D_train_indices.npy", train_indices)
-    # np.save("dataset/1D_val_indices.npy", val_indices)
-    # np.save("dataset/1D_test_indices.npy", test_indices)
+    np.save("dataset/3D_train_indices.npy", train_indices)
+    np.save("dataset/3D_val_indices.npy", val_indices)
+    np.save("dataset/3D_test_indices.npy", test_indices)
 
 
     Training = True
@@ -659,7 +649,7 @@ if __name__ == '__main__':
     # load the data set
     train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True)
     val_loader = torch.utils.data.DataLoader(val_set, batch_size=batch_size, shuffle=True)
-    # test_loader  = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False)
+
 
     print('passed data loader')
     # load the model

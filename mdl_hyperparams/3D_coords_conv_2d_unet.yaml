@@ -16,4 +16,4 @@ number_of_profiles: 16
 number_of_points: 512
 restart: False
 reduced_data_fraction: 1
-curve_file_path: dataset/3D_compressor_polar_normalised_16_profiles
+curve_file_path: dataset/3D_compressor_polar_normalised
