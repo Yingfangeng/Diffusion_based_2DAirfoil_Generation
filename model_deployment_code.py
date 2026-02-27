@@ -23,6 +23,7 @@ import contextlib
 from contextlib import redirect_stdout
 from scipy.signal import savgol_filter
 import logging
+from torchmetrics.functional.image.ssim import structural_similarity_index_measure
 
 
 from models.diffusion_model import EDM_CFG, edm_sampler, StackedRandomGenerator
@@ -1328,9 +1329,9 @@ def run_meanline(geometry, m_dot, omega, timeout=10):
 
 
 def load_1D_dataset():
-    df = pd.read_csv('dataset/1D_compressor_geometry_normalised.csv')
-    min_max = pd.read_csv('dataset/1D_compressor_geometry_minmax.csv')
-    val_indices = np.load('dataset/1D_test_indices.npy')
+    df = pd.read_csv('dataset/OLD_NO_USE/1D_compressor_geometry_normalised.csv')
+    min_max = pd.read_csv('dataset/OLD_NO_USE/1D_compressor_geometry_minmax.csv')
+    val_indices = np.load('dataset/OLD_NO_USE/1D_test_indices.npy')
 
     if ("min" in min_max.columns) and ("max" in min_max.columns):
         feature_col = min_max.columns[0]
@@ -2165,13 +2166,6 @@ def create_shroud_curve_file(x_shroud, r_shroud, compressor_code, r_1_tip, r_2, 
 
 
 
-
-
-
-
-
-
-
 def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manual_seed, multiple_design, x_foil_timeout, CL_tolerence, CD_tolerence, max_iteration, 
                   m_dot, RPM, eta, pr, pca, data_structure, off_design_plot, number_of_profiles = None, number_of_points = None, smoothening = False):
 
@@ -2182,10 +2176,10 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
     df, min_max, val_indices = load_1D_dataset()
 
 
-    geometry_min_max = pd.read_csv('dataset/3D_geometry_minmax.csv')
-    df_2 = pd.read_csv('dataset/1D_compressor_geometry.csv')
-    df_3 = pd.read_csv('dataset/polar_minmax_per_compressor_normalised.csv')
-    df_4 = pd.read_csv('dataset/polar_secondary_minmax.csv')
+
+    df_2 = pd.read_csv('dataset/OLD_NO_USE/1D_compressor_geometry.csv')
+    df_3 = pd.read_csv('dataset/OLD_NO_USE/polar_minmax_per_compressor_normalised.csv')
+    df_4 = pd.read_csv('dataset/OLD_NO_USE/polar_secondary_minmax.csv')
 
 
 
@@ -2243,8 +2237,9 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
             xc_max = df_3['x_max']
 
 
+            print('This is compressor', compressor_index)
 
-            original_profiles, profile_has_error = load_blade_curve(f'dataset/3D_compressor_polar_normalised/compressor_{compressor_index}.curve')
+            original_profiles, profile_has_error = load_blade_curve(f'dataset/OLD_NO_USE/3D_compressor_polar_normalised_16_profiles/compressor_{compressor_index}.curve')
             if profile_has_error:
                 print('This profile has error!')
             
@@ -2256,6 +2251,7 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                 x_min_denormalised = xc_min * (x_min_max - x_min_min) + x_min_min
                 x_max_denormalised = xc_max * (x_max_max - x_max_min) + x_max_min
                 
+
                 x_normalised = profile[:, 0]
                 r_normalised = profile[:, 1]
                 theta_normalised = profile[:, 2]
@@ -2269,7 +2265,13 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                 
                 ax_3D.plot(x, y, z, color='r')
                 ax.scatter(x, (y**2 + z**2)**0.5, s = 1, color = 'r')
-
+            x_1 = np.concatenate(original_profiles).ravel()
+            x_1 = np.expand_dims(x_1, 0)
+            x_1 = torch.tensor(x_1, dtype=torch.float32)
+            x_1 = x_1.view(1, 16, 512, 3)
+            x_1 = x_1.permute(0, 3, 1, 2)
+            
+        
         else:
             pr_normalised, m_dot_normalised, eta_normalised, omega_normalised = test_condition_1D(m_dot, RPM, pr, eta)
 
@@ -2296,29 +2298,32 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
             while not success and number_of_trials < max_iteration:
 
                 # The auxiliary model, input 4 output 8
-                # cond = (torch.tensor([m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised]).to(device))
-                # # print(m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised)
-                # rnd = StackedRandomGenerator(device, range(sample_number))
+                cond = (torch.tensor([m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised]).to(device))
+                # print(m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised)
+                rnd = StackedRandomGenerator(device, range(sample_number))
                 
-                # latents = rnd.randn([sample_number, aux_model.in_dim], device=device)
-                # with torch.no_grad():
-                #     samples, _ = edm_sampler(aux_model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
+                latents = rnd.randn([sample_number, aux_model.in_dim], device=device)
+                with torch.no_grad():
+                    samples, _ = edm_sampler(aux_model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
                 
-                # samples = samples.float()
-                # sample = samples[0].cpu().numpy()
-                # xc_min = sample[0]
-                # xc_max = sample[1]
-                # r_min = sample[2]
-                # r_max = sample[3]
-                # theta_min = sample[4]
-                # theta_max = sample[5]
-                # n_blades = sample[6]
-                # n_splitter =  sample[7]
+                samples = samples.float()
+                sample = samples[0].cpu().numpy()
+                xc_min = sample[0]
+                xc_max = sample[1]
+                r_min = sample[2]
+                r_max = sample[3]
+                theta_min = sample[4]
+                theta_max = sample[5]
+                n_blades = sample[6]
+                n_splitter =  sample[7]
 
                 
                 # The main model
                 cond = (torch.tensor([m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised, xc_min, xc_max, r_min, r_max, theta_min, theta_max, n_blades, n_splitter]).to(device))
                 # print(m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised, xc_min, xc_max, r_min, r_max, theta_min, theta_max, n_blades, n_splitter)
+                
+                
+                
                 rnd = StackedRandomGenerator(device, range(sample_number))
                 
                 if data_structure == '3D_PCA':
@@ -2336,8 +2341,12 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                         samples, _ = edm_sampler(model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
                     samples = samples.float()
                     sample = samples[0].cpu().numpy()
+                    x_2 = samples[0].cpu()
                     sample = sample.ravel()
                 
+                x_2 = x_2.view(1, 16, 512, 3)
+                x_2 = x_2.permute(0, 3, 1, 2)
+
                 r_normalised = sample[1::3]
                 theta_normalised = sample[2::3]
                 x_normalised = sample[0::3]
@@ -2350,6 +2359,8 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                 x_min_denormalised = xc_min * (x_min_max - x_min_min) + x_min_min
                 x_max_denormalised = xc_max * (x_max_max - x_max_min) + x_max_min
 
+                print(r_min_denormalised, r_max_denormalised, x_min_denormalised, x_max_denormalised)
+
 
                 r = r_normalised * (r_max_denormalised - r_min_denormalised) + r_min_denormalised 
                 theta = theta_normalised * (theta_max_denormalised - theta_min_denormalised) + theta_min_denormalised 
@@ -2360,7 +2371,6 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                 if smoothening:
                     print('Smoothening is enabled')
                     x, y, z = smoothening_3D(x,y,z, 3, 11) # third order polynomial fit with window of 11
-                print(len(x), 'length of x')
 
                 if round(n_blades) == 0:
                     number_of_blades =10
@@ -2376,7 +2386,7 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                 omega = omega_normalised*(min_max.loc['omega', 'max']  - min_max.loc['omega', 'min']) + min_max.loc['omega', 'min']
                 pr_original = pr_normalised*(min_max.loc['pressure_ratio', 'max']  - min_max.loc['pressure_ratio', 'min']) + min_max.loc['pressure_ratio', 'min']
                 eta_original = eta_normalised*(min_max.loc['efficiency', 'max']  - min_max.loc['efficiency', 'min']) + min_max.loc['efficiency', 'min']
-
+                # print(m_dot, omega)
                 
                 RPM = (omega*60)/(2*np.pi)
 
@@ -2404,7 +2414,7 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
             
             design += 1
 
-            if number_of_trials == max_iteration:
+            if number_of_trials == max_iteration and not success:
 
                 index = pr_error_list.index(min(pr_error_list))
 
@@ -2431,6 +2441,12 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
             print(f'Generated geometry saved to {out_path}')
             n_profiles = len(geometry[0]) // 512
             print(n_profiles, 'profiles')
+            
+            print(x_1.shape, x_2.shape, 'The two tensor shapes')
+            print('The similarity score:', structural_similarity_index_measure(x_1, x_2).item())
+            
+            
+            
             # write the blade profile curve file
             with open(out_path, "w") as f:
                 for i in range(n_profiles): 
@@ -2464,8 +2480,8 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
             r_1_tip = geometry_1D['R_tip_1']
             r_2 = geometry_1D['R_mean_2']
             b_2 = geometry_1D['b_2']
-            print(geometry_1D['beta_b1_hub'])
-            print(geometry_1D['beta_b1_tip'])
+            print(geometry_1D['beta_b1_hub'], geometry_1D['beta_b1_tip'])
+            print(geometry_1D['R_tip_1'], geometry_1D['b_2'])
             create_hub_curve_file(x_hub, r_hub, r_1_tip, r_2, compressor_code, vaneless_existence = True, pinching = True)
             create_shroud_curve_file(x_tip, r_tip, compressor_code, r_1_tip, r_2, b_2, vaneless_existence = True, pinching = True)
 
@@ -2494,15 +2510,17 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
         ax_3D.set_ylabel('Y (mm)')
         ax_3D.set_zlabel('Z (mm)')
         
+
+
         save_fig_custom(fig_3D, file_path='fig', file_name=f'3D_view_{m_dot:.2f}_{int(RPM)}_{pr_original:.2f}_{eta_original:.2f}', overwrite=True, dpi = 500)
         save_fig_custom(fig, file_path='fig', file_name=f'Meridional_view_{m_dot:.2f}_{int(RPM)}_{pr_original:.2f}_{eta_original:.2f}', overwrite=True, dpi = 500)
         plt.show()
+        
 
 
 
 def denoising_plot_3D(mode, device, sample_number, model, aux_model, num_steps, manual_seed, 
                   m_dot, RPM, eta, pr, pca, data_structure, number_of_profiles = None, number_of_points = None):
-
 
 
     model.eval()
@@ -3363,3 +3381,33 @@ def pca_reconstruct_aerofoil_comparison(component_number):
     ax.grid(ls=':')
     ax.legend(fontsize = 12)
     plt.show()
+
+
+def swd_pooled_points(blades_real, blades_gen, n_points=50000, n_proj=128, seed=0):
+    rng = np.random.default_rng(seed)
+    A = np.asarray(blades_real).reshape(-1, 3).astype(np.float64)
+    B = np.asarray(blades_gen).reshape(-1, 3).astype(np.float64)
+
+    if n_points is not None:
+        A = A[rng.choice(len(A), size=min(n_points, len(A)), replace=False)]
+        B = B[rng.choice(len(B), size=min(n_points, len(B)), replace=False)]
+
+    n = min(len(A), len(B))
+    if len(A) != n:
+        A = A[rng.choice(len(A), size=n, replace=False)]
+    if len(B) != n:
+        B = B[rng.choice(len(B), size=n, replace=False)]
+
+    dirs = rng.normal(size=(n_proj, 3))
+    dirs /= np.linalg.norm(dirs, axis=1, keepdims=True)
+
+    total = 0.0
+    for v in dirs:
+        a = A @ v
+        b = B @ v
+        a.sort()
+        b.sort()
+        total += np.mean(np.abs(a - b))
+
+    return float(total / n_proj)
+
