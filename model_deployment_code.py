@@ -1329,9 +1329,9 @@ def run_meanline(geometry, m_dot, omega, timeout=10):
 
 
 def load_1D_dataset():
-    df = pd.read_csv('dataset/OLD_NO_USE/1D_compressor_geometry_normalised.csv')
-    min_max = pd.read_csv('dataset/OLD_NO_USE/1D_compressor_geometry_minmax.csv')
-    val_indices = np.load('dataset/OLD_NO_USE/1D_test_indices.npy')
+    df = pd.read_csv('dataset/1D_compressor_geometry_normalised.csv')
+    min_max = pd.read_csv('dataset/1D_compressor_geometry_minmax.csv')
+    val_indices = np.load('dataset/3D_test_indices.npy')
 
     if ("min" in min_max.columns) and ("max" in min_max.columns):
         feature_col = min_max.columns[0]
@@ -2177,9 +2177,9 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
 
 
 
-    df_2 = pd.read_csv('dataset/OLD_NO_USE/1D_compressor_geometry.csv')
-    df_3 = pd.read_csv('dataset/OLD_NO_USE/polar_minmax_per_compressor_normalised.csv')
-    df_4 = pd.read_csv('dataset/OLD_NO_USE/polar_secondary_minmax.csv')
+    df_2 = pd.read_csv('dataset/1D_compressor_geometry.csv')
+    df_3 = pd.read_csv('dataset/polar_minmax_per_compressor_normalised.csv')
+    df_4 = pd.read_csv('dataset/polar_secondary_minmax.csv')
 
 
 
@@ -2239,7 +2239,7 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
 
             print('This is compressor', compressor_index)
 
-            original_profiles, profile_has_error = load_blade_curve(f'dataset/OLD_NO_USE/3D_compressor_polar_normalised_16_profiles/compressor_{compressor_index}.curve')
+            original_profiles, profile_has_error = load_blade_curve(f'dataset/3D_compressor_polar_normalised/compressor_{compressor_index}.curve')
             if profile_has_error:
                 print('This profile has error!')
             
@@ -2386,7 +2386,7 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                 omega = omega_normalised*(min_max.loc['omega', 'max']  - min_max.loc['omega', 'min']) + min_max.loc['omega', 'min']
                 pr_original = pr_normalised*(min_max.loc['pressure_ratio', 'max']  - min_max.loc['pressure_ratio', 'min']) + min_max.loc['pressure_ratio', 'min']
                 eta_original = eta_normalised*(min_max.loc['efficiency', 'max']  - min_max.loc['efficiency', 'min']) + min_max.loc['efficiency', 'min']
-                # print(m_dot, omega)
+                print('m_dot', m_dot, 'omega', omega)
                 
                 RPM = (omega*60)/(2*np.pi)
 
@@ -3410,4 +3410,159 @@ def swd_pooled_points(blades_real, blades_gen, n_points=50000, n_proj=128, seed=
         total += np.mean(np.abs(a - b))
 
     return float(total / n_proj)
+
+
+
+
+def compare_3D_distribution(mode):
+
+    # fig_3D = plt.figure(figsize=(10, 8))
+    # ax_3D = fig_3D.add_subplot(111, projection="3d")
+    fig, ax = plt.subplots()
+    fig_2, ax_2 = plt.subplots()
+    fig_3, ax_3 = plt.subplots()
+    cmap = plt.get_cmap("tab10")
+    
+    if mode == 'individual':
+        
+
+        # Model generated distribution
+        for compressor_index in range(100):
+            color = cmap(compressor_index % 10)
+            profiles, error = load_blade_curve(f'generated_compressor_3D_geometry/0.08_85000_3.59_0.80_design_{compressor_index+1}/Main_blade.curve')
+            profiles = [profiles[0], profiles[-1]]
+            for profile in profiles:
+                x = profile[:, 0]
+                y = profile[:, 1]
+                z = profile[:, 2]
+
+                ax.scatter(x,(y**2+z**2)**0.5, s=1, color = color)
+                ax.axis('equal')
+                ax.set_ylim(5,50)
+        
+
+        # Training data distribution
+        df = pd.read_csv('dataset/OLD_NO_USE/1D_compressor_geometry.csv')
+        
+        target_efficiency = 0.8004911799854328
+        target_pressure_ratio =  3.591969416336344
+
+        compressor_index_list =[]
+
+        for _, row in df.iterrows():
+            if row['m_dot'] == 0.0825:
+                if row['omega'] == 8901.17918517108:
+                    if 100*(abs((row['efficiency'] - target_efficiency)/target_efficiency)) < 1:
+                        if 100*(abs((row['pressure_ratio'] - target_pressure_ratio)/target_pressure_ratio)) < 1:
+                            compressor_index_list.append(row['geometry_index'])
+                            
+
+
+        print(f'There are {len(compressor_index_list)} that can satisfy the condition in the training set.')
+        for compressor_index in compressor_index_list:
+            profiles, _ = load_blade_curve(f'dataset/OLD_NO_USE/3D_compressor_16_profiles/compressor_{compressor_index}.curve')
+            color = cmap(compressor_index % 10)
+            profiles = [profiles[0], profiles[-1]]
+            for profile in profiles:
+                x = profile[:, 0]
+                y = profile[:, 1]
+                z = profile[:, 2]
+
+                ax_2.scatter(x,(y**2 + z**2)**0.5, s=1, color = color)
+                ax_2.axis('equal')
+                ax_2.set_ylim(5,50)
+        
+        
+        # Physical distribution
+        for compressor_index in range(445):
+            color = cmap(compressor_index % 10)
+            profiles, error = load_blade_curve(f'dataset/physical_distribution_blades/compressor_{compressor_index+1}.curve')
+            profiles = [profiles[0], profiles[-1]]
+            for profile in profiles:
+                x = profile[:, 0]
+                y = profile[:, 1]
+                z = profile[:, 2]
+
+                ax_3.scatter(x,(y**2+z**2)**0.5, s=1, color = color)
+                ax_3.axis('equal')
+                ax_3.set_ylim(5,50)
+    
+    elif mode == 'heatmap':
+        
+        def plot_kde(ax, X, R):
+
+
+            values = np.vstack([X, R])
+            kde = gaussian_kde(values)
+
+            xmin, xmax = min(X), max(X)
+            rmin, rmax = min(R), max(R)
+            print('X min', xmin, 'X max', xmax)
+            print('R min', rmin, 'R max', rmax)
+
+            xi, ri = np.mgrid[xmin:xmax:200j, rmin:rmax:200j]
+            zi = kde(np.vstack([xi.ravel(), ri.ravel()])).reshape(xi.shape)
+
+            ax.contourf(xi, ri, zi, levels=50, cmap = 'Reds')
+            ax.axis('equal')
+            ax.set_ylim(5, 50)
+
+
+        # Model generated
+        X1, R1 = [], []
+        for compressor_index in range(100):
+            profiles, _ = load_blade_curve(f'generated_compressor_3D_geometry/0.08_85000_3.59_0.80_design_{compressor_index+1}/Main_blade.curve')
+            profiles = [profiles[0], profiles[-1]]
+            for profile in profiles:
+                x = profile[:, 0]
+                r = np.sqrt(profile[:,1]**2 + profile[:,2]**2)
+                X1.append(x); R1.append(r)
+
+        plot_kde(ax, np.concatenate(X1), np.concatenate(R1))
+
+
+        # Training data
+        df = pd.read_csv('dataset/OLD_NO_USE/1D_compressor_geometry.csv')
+        
+        target_efficiency = 0.8004911799854328
+        target_pressure_ratio =  3.591969416336344
+
+        compressor_index_list =[]
+
+        for _, row in df.iterrows():
+            if row['m_dot'] == 0.0825:
+                if row['omega'] == 8901.17918517108:
+                    if 100*(abs((row['efficiency'] - target_efficiency)/target_efficiency)) < 1:
+                        if 100*(abs((row['pressure_ratio'] - target_pressure_ratio)/target_pressure_ratio)) < 1:
+                            compressor_index_list.append(row['geometry_index'])
+                            
+
+        X2, R2 = [], []
+        for compressor_index in compressor_index_list:
+            profiles, _ = load_blade_curve(f'dataset/OLD_NO_USE/3D_compressor_16_profiles/compressor_{compressor_index}.curve')
+            profiles = [profiles[0], profiles[-1]]
+            for profile in profiles:
+                x = profile[:, 0]
+                r = np.sqrt(profile[:,1]**2 + profile[:,2]**2)
+                X2.append(x); R2.append(r)
+
+        plot_kde(ax_2, np.concatenate(X2), np.concatenate(R2))
+
+
+        # Physical
+        X3, R3 = [], []
+        for compressor_index in range(445):
+            profiles, _ = load_blade_curve(f'dataset/physical_distribution_blades/compressor_{compressor_index+1}.curve')
+            profiles = [profiles[0], profiles[-1]]
+            for profile in profiles:
+                x = profile[:, 0]
+                r = np.sqrt(profile[:,1]**2 + profile[:,2]**2)
+                X3.append(x); R3.append(r)
+
+        plot_kde(ax_3, np.concatenate(X3), np.concatenate(R3))
+
+    
+    
+    plt.show()
+
 

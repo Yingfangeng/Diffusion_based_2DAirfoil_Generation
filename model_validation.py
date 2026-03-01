@@ -546,7 +546,7 @@ def load_blade_curve(filename):
 def load_1D_dataset():
     df = pd.read_csv('dataset/1D_compressor_geometry_normalised.csv')
     min_max = pd.read_csv('dataset/1D_compressor_geometry_minmax.csv')
-    val_indices = np.load('dataset/1D_test_indices.npy')
+    val_indices = np.load('dataset/3D_test_indices.npy')
 
     if ("min" in min_max.columns) and ("max" in min_max.columns):
         feature_col = min_max.columns[0]
@@ -804,16 +804,9 @@ def validation_3D(device, sample_percent, model, aux_model, num_steps, manual_se
     df, min_max, val_indices = load_1D_dataset()
 
 
-    geometry_min_max = pd.read_csv('dataset/3D_geometry_minmax.csv')
     df_2 = pd.read_csv('dataset/1D_compressor_geometry.csv')
     df_3 = pd.read_csv('dataset/polar_minmax_per_compressor_normalised.csv')
     df_4 = pd.read_csv('dataset/polar_secondary_minmax.csv')
-    x_max = geometry_min_max['x_max'].iloc[0]
-    x_min = geometry_min_max['x_min'].iloc[0]
-    y_max = geometry_min_max['y_max'].iloc[0]
-    y_min = geometry_min_max['y_min'].iloc[0]
-    z_max = geometry_min_max['z_max'].iloc[0]
-    z_min = geometry_min_max['z_min'].iloc[0]
 
 
     r_min_min = df_4['r_min_min'].iloc[0]
@@ -892,102 +885,84 @@ def validation_3D(device, sample_percent, model, aux_model, num_steps, manual_se
 
                 while not success and number_of_trials < max_iteration:
 
-                    if coordinate == 'cartesian':
-                        cond = (torch.tensor([m_dot, omega,  pr, eta]).to(device))
-                    
-                        rnd = StackedRandomGenerator(device, range(sample_number))
-                        latents = rnd.randn([sample_number, model.in_dim], device=device)
 
+                        
+
+
+
+                        
+                    # The first model, input 4 output 8
+                    cond = (torch.tensor([m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised]).to(device))
+                    # print(m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised)
+                    rnd = StackedRandomGenerator(device, range(sample_number))
+                    latents = rnd.randn([sample_number, aux_model.in_dim], device=device)
+                    with torch.no_grad():
+                        samples, _ = edm_sampler(aux_model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
+                    
+                    samples = samples.float()
+                    sample = samples[0].cpu().numpy()
+                    xc_min = sample[0]
+                    xc_max = sample[1]
+                    r_min = sample[2]
+                    r_max = sample[3]
+                    theta_min = sample[4]
+                    theta_max = sample[5]
+                    n_blades = sample[6]
+                    n_splitter =  sample[7]
+
+                    
+                    # The main model
+                    cond = (torch.tensor([m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised, xc_min, xc_max, r_min, r_max, theta_min, theta_max, n_blades, n_splitter]).to(device))
+                    # print(m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised, xc_min, xc_max, r_min, r_max, theta_min, theta_max, n_blades, n_splitter)
+                    rnd = StackedRandomGenerator(device, range(sample_number))
+                    
+                    if data_structure == '3D_PCA':
+                        latents = rnd.randn([sample_number, model.in_dim], device=device)
                         with torch.no_grad():
                             samples, _ = edm_sampler(model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
-
                         samples = samples.float()
                         sample = samples[0].cpu().numpy()
-                        
-                        x_normalised = sample[0::3]
-                        y_normalised = sample[1::3]
-                        z_normalised = sample[2::3]
+                        sample = pca.inverse_transform(sample)
+                    
 
-                        x_coordinates = x_normalised * (x_max - x_min) + x_min
-                        y_coordinates = y_normalised * (y_max - y_min) + y_min
-                        z_coordinates = z_normalised * (z_max - z_min) + z_min
-                        
-
-                    elif coordinate == 'polar':
-
-                        
-                        # The first model, input 4 output 8
-                        cond = (torch.tensor([m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised]).to(device))
-                        # print(m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised)
-                        rnd = StackedRandomGenerator(device, range(sample_number))
-                        latents = rnd.randn([sample_number, aux_model.in_dim], device=device)
+                    if data_structure == '3D_coordinates':
+                        latents = torch.randn(1, 1, number_of_profiles, number_of_points*3, device=device)
                         with torch.no_grad():
-                            samples, _ = edm_sampler(aux_model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
-                        
+                            samples, _ = edm_sampler(model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
                         samples = samples.float()
                         sample = samples[0].cpu().numpy()
-                        xc_min = sample[0]
-                        xc_max = sample[1]
-                        r_min = sample[2]
-                        r_max = sample[3]
-                        theta_min = sample[4]
-                        theta_max = sample[5]
-                        n_blades = sample[6]
-                        n_splitter =  sample[7]
+                        sample = sample.ravel()
+                    
 
-                        
-                        # The main model
-                        cond = (torch.tensor([m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised, xc_min, xc_max, r_min, r_max, theta_min, theta_max, n_blades, n_splitter]).to(device))
-                        # print(m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised, xc_min, xc_max, r_min, r_max, theta_min, theta_max, n_blades, n_splitter)
-                        rnd = StackedRandomGenerator(device, range(sample_number))
-                        
-                        if data_structure == '3D_PCA':
-                            latents = rnd.randn([sample_number, model.in_dim], device=device)
-                            with torch.no_grad():
-                                samples, _ = edm_sampler(model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
-                            samples = samples.float()
-                            sample = samples[0].cpu().numpy()
-                            sample = pca.inverse_transform(sample)
-                        
+                    r_normalised = sample[1::3]
+                    theta_normalised = sample[2::3]
+                    x_normalised = sample[0::3]
+                    
 
-                        if data_structure == '3D_coordinates':
-                            latents = torch.randn(1, 1, number_of_profiles, number_of_points*3, device=device)
-                            with torch.no_grad():
-                                samples, _ = edm_sampler(model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
-                            samples = samples.float()
-                            sample = samples[0].cpu().numpy()
-                            sample = sample.ravel()
-                        
-
-                        r_normalised = sample[1::3]
-                        theta_normalised = sample[2::3]
-                        x_normalised = sample[0::3]
-                        
-
-                        r_min_denormalised = r_min * (r_min_max - r_min_min) + r_min_min
-                        r_max_denormalised = r_max * (r_max_max - r_max_min) + r_max_min
-                        theta_min_denormalised = theta_min * (theta_min_max - theta_min_min) + theta_min_min
-                        theta_max_denormalised = theta_max * (theta_max_max - theta_max_min) + theta_max_min
-                        x_min_denormalised = xc_min * (x_min_max - x_min_min) + x_min_min
-                        x_max_denormalised = xc_max * (x_max_max - x_max_min) + x_max_min
+                    r_min_denormalised = r_min * (r_min_max - r_min_min) + r_min_min
+                    r_max_denormalised = r_max * (r_max_max - r_max_min) + r_max_min
+                    theta_min_denormalised = theta_min * (theta_min_max - theta_min_min) + theta_min_min
+                    theta_max_denormalised = theta_max * (theta_max_max - theta_max_min) + theta_max_min
+                    x_min_denormalised = xc_min * (x_min_max - x_min_min) + x_min_min
+                    x_max_denormalised = xc_max * (x_max_max - x_max_min) + x_max_min
 
 
-                        r = r_normalised * (r_max_denormalised - r_min_denormalised) + r_min_denormalised 
-                        theta = theta_normalised * (theta_max_denormalised - theta_min_denormalised) + theta_min_denormalised 
-                        x = x_normalised * (x_max_denormalised - x_min_denormalised) + x_min_denormalised 
-        
-                        x, y, z = cyl_to_cart_about_x(x, r, theta)
-                        
-                        if smoothening:
-                            x, y, z = smoothening_3D(x,y,z,3,11)
+                    r = r_normalised * (r_max_denormalised - r_min_denormalised) + r_min_denormalised 
+                    theta = theta_normalised * (theta_max_denormalised - theta_min_denormalised) + theta_min_denormalised 
+                    x = x_normalised * (x_max_denormalised - x_min_denormalised) + x_min_denormalised 
+    
+                    x, y, z = cyl_to_cart_about_x(x, r, theta)
+                    
+                    if smoothening:
+                        x, y, z = smoothening_3D(x,y,z,3,11)
 
 
-                        if round(n_blades) == 0:
-                            number_of_blades =10
-                        else:
-                            number_of_blades =12
+                    if round(n_blades) == 0:
+                        number_of_blades =10
+                    else:
+                        number_of_blades =12
 
-                        geometry_1D = geometry_3D_to_1D_conversion(x,y,z, number_of_blades)
+                    geometry_1D = geometry_3D_to_1D_conversion(x,y,z, number_of_blades)
                         
                         
 
@@ -1255,5 +1230,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     config_file_main = args.main_model_config
     config_file_aux = args.aux_model_config
-    model_deployment(config_file_main, sample_percent = 0.2, aux_model_config_path=config_file_aux, num_steps = 100,  manual_seed = 123,
+    model_deployment(config_file_main, sample_percent = 0.1, aux_model_config_path=config_file_aux, num_steps = 100,  manual_seed = 123,
                      x_foil_timeout=5, CL_tolerence = 1, CD_tolerence = 1, max_iteration = 100, mode = 'trivial')
