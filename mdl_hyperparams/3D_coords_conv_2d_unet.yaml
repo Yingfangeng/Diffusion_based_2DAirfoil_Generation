@@ -1,4 +1,4 @@
-dataset_csv_path: 'dataset/1D_compressor_geometry.csv'
+dataset_csv_path: 'dataset/1D_compressor_geometry_no_splitter_filtered.csv'
 data_structure: '3D_coordinates' 
 neural_network_sturcture: 'ResNet_UNet_2D'
 learning_rate: 1E-4

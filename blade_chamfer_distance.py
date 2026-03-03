@@ -67,10 +67,11 @@ def distribution_compare():
     all_files = sorted(os.listdir(directory))  # ensure deterministic order
 
     selected_files = all_files[:100]
-    selected_files_2 = all_files[250:350]
+    selected_files_2 = all_files[100:200]
 
 
     model_generated_distribution = []
+    model_generated_distribution_2 = []
     physical_distribution = []
     physical_distribution_2 = []
     
@@ -93,18 +94,30 @@ def distribution_compare():
         profiles, _ = load_blade_curve(f'generated_compressor_3D_geometry/model_generated_distribution/0.08_85000_3.59_0.80_design_{compressor_index+1}/Main_blade.curve')
         model_generated_distribution.append(np.concatenate(profiles, axis=0).astype(np.float64))
 
+    # for compressor_index in range(100):
+    #     profiles, _ = load_blade_curve(f'generated_compressor_3D_geometry/model_generated_distribution/0.08_85000_3.59_0.80_design_{compressor_index+50}/Main_blade.curve')
+    #     model_generated_distribution_2.append(np.concatenate(profiles, axis=0).astype(np.float64))
+
+
+
     assert len(physical_distribution) == len(physical_distribution_2)
 
 
     final_distance_1 = compute_chamfer_distance(model_generated_distribution, physical_distribution)
     final_distance_2 = compute_chamfer_distance(physical_distribution, model_generated_distribution)
-    print("The chamfer distances between the model generated blade distribution and the physical distribution", np.mean([final_distance_1, final_distance_2]))
+    print("The chamfer distances between the model generated blade distribution and the physical distribution") 
+    print(final_distance_1, final_distance_2, np.mean([final_distance_1, final_distance_2]))
 
 
     final_distance_1 = compute_chamfer_distance(physical_distribution, physical_distribution_2)
     final_distance_2 = compute_chamfer_distance(physical_distribution_2, physical_distribution)
+    print("The chamfer distances between two physical distributions")
+    print(final_distance_1, final_distance_2, np.mean([final_distance_1, final_distance_2]))
 
-    print("The chamfer distances between two physical distributions", np.mean([final_distance_1, final_distance_2]))
+
+    # final_distance_1 = compute_chamfer_distance(model_generated_distribution, model_generated_distribution_2)
+    # final_distance_2 = compute_chamfer_distance(model_generated_distribution_2, model_generated_distribution)
+    # print("The chamfer distances between two generated distributions", np.mean([final_distance_1, final_distance_2]))
 
 
 if __name__ == '__main__':

@@ -1,8 +1,9 @@
 training:
+
+	python -m models.diffusion_model mdl_hyperparams/3D_aux.yaml > mdl_weight/training_log/3D_aux_mar_03.log
+	python -m models.diffusion_model mdl_hyperparams/3D_coords_conv_2d_unet.yaml > mdl_weight/training_log/3D_coords_conv_2d_unet_mar_03.log
 	
-	python -m models.diffusion_model mdl_hyperparams/3D_coords_conv_2d_unet.yaml > mdl_weight/training_log/3D_coords_conv_2d_unet_new.log
 	
-	python -m models.diffusion_model mdl_hyperparams/3D_aux.yaml > mdl_weight/training_log/3D_aux_new.log
 
 
 

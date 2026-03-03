@@ -500,16 +500,14 @@ if __name__ == '__main__':
 
 
         df_2 = pd.read_csv('dataset/polar_minmax_per_compressor_normalised.csv')
-        df_3 = pd.read_csv('dataset/1D_compressor_geometry.csv')
-
+        df_3 = pd.read_csv('dataset/1D_compressor_geometry_no_splitter_filtered.csv')
 
 
         coordinates = []
         cond_data = []
-        
+
 
         for idx, row in df.iterrows():
-            
             row_3 = df_3.iloc[idx]
             compressor_index = row_3['geometry_index']
             row_2 = df_2[df_2['compressor_index'] == compressor_index]
@@ -525,7 +523,7 @@ if __name__ == '__main__':
 
 
     elif data_structure == '3D_coordinates' or data_structure == '3D_PCA':
-        normalised_df = pd.read_csv('dataset/1D_compressor_geometry_normalised.csv')
+        normalised_df = pd.read_csv('dataset/1D_compressor_geometry_normalised_no_splitter_filtered.csv')
         geometry_normalised_df = pd.read_csv('dataset/polar_minmax_per_compressor_normalised.csv')
         num_components = int(model_config['component_number'])
         curve_file = model_config['curve_file_path']

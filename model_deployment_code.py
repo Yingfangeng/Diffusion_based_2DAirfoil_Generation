@@ -2387,7 +2387,7 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                 omega = omega_normalised*(min_max.loc['omega', 'max']  - min_max.loc['omega', 'min']) + min_max.loc['omega', 'min']
                 pr_original = pr_normalised*(min_max.loc['pressure_ratio', 'max']  - min_max.loc['pressure_ratio', 'min']) + min_max.loc['pressure_ratio', 'min']
                 eta_original = eta_normalised*(min_max.loc['efficiency', 'max']  - min_max.loc['efficiency', 'min']) + min_max.loc['efficiency', 'min']
-                print('m_dot', m_dot, 'omega', omega)
+                # print('m_dot', m_dot, 'omega', omega)
                 
                 RPM = (omega*60)/(2*np.pi)
 
@@ -2441,10 +2441,10 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
             out_path = f'{out_path}/Main_blade.curve'
             print(f'Generated geometry saved to {out_path}')
             n_profiles = len(geometry[0]) // 512
-            print(n_profiles, 'profiles')
+            # print(n_profiles, 'profiles')
             
-            print(x_1.shape, x_2.shape, 'The two tensor shapes')
-            print('The similarity score:', structural_similarity_index_measure(x_1, x_2).item())
+            # print(x_1.shape, x_2.shape, 'The two tensor shapes')
+            # print('The similarity score:', structural_similarity_index_measure(x_1, x_2).item())
             
             
             
