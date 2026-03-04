@@ -347,10 +347,10 @@ def validation_1D(device, sample_percent, model, num_steps, manual_seed, multipl
     model.eval()
     pr_tolerance = CL_tolerence
     eta_tolerance = CD_tolerence
-    df = pd.read_csv('dataset/1D_compressor_geometry_normalised.csv')
-    min_max = pd.read_csv('dataset/1D_compressor_geometry_minmax.csv')
+    df = pd.read_csv('dataset/1D_compressor_geometry_normalised_no_splitter_filtered.csv')
+    min_max = pd.read_csv('dataset/1D_compressor_geometry_minmax_no_splitter_filtered.csv')
 
-    val_indices = np.load('dataset/1D_test_indices_proper_division.npy')
+    val_indices = np.load('dataset/1D_test_indices.npy')
 
     if ("min" in min_max.columns) and ("max" in min_max.columns):
         feature_col = min_max.columns[0]  # usually "Unnamed: 0"
@@ -362,7 +362,6 @@ def validation_1D(device, sample_percent, model, num_steps, manual_seed, multipl
     
     random.seed(manual_seed)
     numbers = random.sample(range(0, len(val_indices)), int(len(val_indices)*sample_percent))
-
    
     print('exe', manual_seed)
 
@@ -544,8 +543,8 @@ def load_blade_curve(filename):
 
 
 def load_1D_dataset():
-    df = pd.read_csv('dataset/1D_compressor_geometry_normalised.csv')
-    min_max = pd.read_csv('dataset/1D_compressor_geometry_minmax.csv')
+    df = pd.read_csv('dataset/1D_compressor_geometry_normalised_no_splitter_filtered.csv')
+    min_max = pd.read_csv('dataset/1D_compressor_geometry_minmax_no_splitter_filtered.csv')
     val_indices = np.load('dataset/3D_test_indices.npy')
 
     if ("min" in min_max.columns) and ("max" in min_max.columns):
@@ -734,7 +733,7 @@ def geometry_3D_to_1D_conversion(x,y,z,number_of_blades):
                 't': thickness, 
                 's': s,
                 'nblades': int(number_of_blades),
-                'n_splitter_blades': int(number_of_blades)/2, # ensure equal number of main and splitter blades
+                'n_splitter_blades': 0, # there is no splitter blades
                 'b3': b_3, 
                 'r3': R_3,
                 'slip_factor': 0.8223}
@@ -795,7 +794,6 @@ def validation_3D(device, sample_percent, model, aux_model, num_steps, manual_se
                   pca, data_structure, model_code, number_of_profiles = None, number_of_points = None):
 
 
-    coordinate = 'polar' # polar or cartesian
     smoothening = False
 
     model.eval()
@@ -804,7 +802,7 @@ def validation_3D(device, sample_percent, model, aux_model, num_steps, manual_se
     df, min_max, val_indices = load_1D_dataset()
 
 
-    df_2 = pd.read_csv('dataset/1D_compressor_geometry.csv')
+    df_2 = pd.read_csv('dataset/1D_compressor_geometry_no_splitter_filtered.csv')
     df_3 = pd.read_csv('dataset/polar_minmax_per_compressor_normalised.csv')
     df_4 = pd.read_csv('dataset/polar_secondary_minmax.csv')
 
@@ -828,7 +826,7 @@ def validation_3D(device, sample_percent, model, aux_model, num_steps, manual_se
 
     random.seed(manual_seed)
     numbers = random.sample(range(0, len(val_indices)), int(len(val_indices)*sample_percent))
-
+    print(len(val_indices))
     print('exe', manual_seed)
 
     sample_number = 1
@@ -958,9 +956,9 @@ def validation_3D(device, sample_percent, model, aux_model, num_steps, manual_se
 
 
                     if round(n_blades) == 0:
-                        number_of_blades =10
+                        number_of_blades =5
                     else:
-                        number_of_blades =12
+                        number_of_blades =6
 
                     geometry_1D = geometry_3D_to_1D_conversion(x,y,z, number_of_blades)
                         

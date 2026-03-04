@@ -480,13 +480,21 @@ if __name__ == '__main__':
         coordinates = []
         cond_data = []
         
+        df_2 = pd.read_csv('dataset/1D_compressor_geometry_no_splitter_filtered.csv')
+        compressor_index_row = df_2['geometry_index'].to_numpy()
 
         for i in range(len(df)):
-            coordinates.append([R_tip_1[i], R_mean_1[i], R_hub_1[i], beta_b1_hub[i], beta_b1_tip[i], beta_b1_mean[i], 
-                               beta_b2[i], R_mean_2[i], b_2[i], L_z[i],  t[i], nblades[i], n_splitter_blades[i], b3[i], r3[i], slip_factor[i]])
+            compressor_index = compressor_index_row[i]
             
-            cond_data.append([m_dot[i], omega[i], pressure_ratio[i], efficiency[i]])
-        
+            # this is to filter out the missing 3D geometries, to align the training data between 1D and 3D
+            file_exist = not os.path.exists(f'dataset/3D_compressor_polar_normalised/compressor_{compressor_index}.curve')
+
+
+            if not file_exist:
+                coordinates.append([R_tip_1[i], R_mean_1[i], R_hub_1[i], beta_b1_hub[i], beta_b1_tip[i], beta_b1_mean[i], 
+                                beta_b2[i], R_mean_2[i], b_2[i], L_z[i],  t[i], nblades[i], n_splitter_blades[i], b3[i], r3[i], slip_factor[i]])
+                cond_data.append([m_dot[i], omega[i], pressure_ratio[i], efficiency[i]])
+
         cond_size = len(cond_data[0])
 
 
@@ -636,9 +644,9 @@ if __name__ == '__main__':
     print(len(train_set), len(val_set), len(test_set))
 
     # Save the dataset division indices
-    np.save("dataset/3D_train_indices.npy", train_indices)
-    np.save("dataset/3D_val_indices.npy", val_indices)
-    np.save("dataset/3D_test_indices.npy", test_indices)
+    np.save("dataset/1D_train_indices.npy", train_indices)
+    np.save("dataset/1D_val_indices.npy", val_indices)
+    np.save("dataset/1D_test_indices.npy", test_indices)
 
 
     Training = True

@@ -1330,8 +1330,8 @@ def run_meanline(geometry, m_dot, omega, timeout=10):
 
 
 def load_1D_dataset():
-    df = pd.read_csv('dataset/1D_compressor_geometry_normalised.csv')
-    min_max = pd.read_csv('dataset/1D_compressor_geometry_minmax.csv')
+    df = pd.read_csv('dataset/1D_compressor_geometry_normalised_no_splitter_filtered.csv')
+    min_max = pd.read_csv('dataset/1D_compressor_geometry_minmax_no_splitter_filtered.csv')
     val_indices = np.load('dataset/3D_test_indices.npy')
 
     if ("min" in min_max.columns) and ("max" in min_max.columns):
@@ -1743,7 +1743,7 @@ def cyl_to_cart_about_x(x, r, theta):
 
 
 
-def geometry_3D_to_1D_conversion(x,y,z,number_of_blades, ax_3D):
+def geometry_3D_to_1D_conversion(x,y,z,number_of_blades, splitter_blades, ax_3D):
     
 
 
@@ -1922,7 +1922,7 @@ def geometry_3D_to_1D_conversion(x,y,z,number_of_blades, ax_3D):
                 't': thickness, 
                 's': s,
                 'nblades': int(number_of_blades),
-                'n_splitter_blades': int(number_of_blades)/2, # ensure equal number of main and splitter blades
+                'n_splitter_blades': int(splitter_blades), # ensure equal number of main and splitter blades
                 'b3': b_3, 
                 'r3': R_3,
                 'slip_factor': 0.8223}
@@ -2178,7 +2178,7 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
 
 
 
-    df_2 = pd.read_csv('dataset/1D_compressor_geometry.csv')
+    df_2 = pd.read_csv('dataset/1D_compressor_geometry_no_splitter_filtered.csv')
     df_3 = pd.read_csv('dataset/polar_minmax_per_compressor_normalised.csv')
     df_4 = pd.read_csv('dataset/polar_secondary_minmax.csv')
 
@@ -2374,11 +2374,13 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                     x, y, z = smoothening_3D(x,y,z, 3, 11) # third order polynomial fit with window of 11
 
                 if round(n_blades) == 0:
-                    number_of_blades =10
+                    number_of_blades = 5
+                    splitter_blades = 0
                 else:
-                    number_of_blades =12
+                    number_of_blades = 6
+                    splitter_blades = 0
 
-                geometry_1D = geometry_3D_to_1D_conversion(x,y,z, number_of_blades, ax_3D)
+                geometry_1D = geometry_3D_to_1D_conversion(x,y,z, number_of_blades, splitter_blades, ax_3D)
                     
                     
 
@@ -2436,9 +2438,9 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
             multiple_design_blade_number.append(number_of_blades)
 
             compressor_code = f'{m_dot:.2f}_{int(RPM)}_{pr_original:.2f}_{eta_original:.2f}_design_{design}'
-            out_path = f'generated_compressor_3D_geometry/{m_dot:.2f}_{int(RPM)}_{pr_original:.2f}_{eta_original:.2f}_design_{design}'
+            out_path = f'generated_compressor_3D_geometry/{compressor_code}'
             os.makedirs(out_path, exist_ok=True)
-            out_path = f'{out_path}/Main_blade.curve'
+
             print(f'Generated geometry saved to {out_path}')
             n_profiles = len(geometry[0]) // 512
             # print(n_profiles, 'profiles')
@@ -2449,7 +2451,7 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
             
             
             # write the blade profile curve file
-            with open(out_path, "w") as f:
+            with open(f'{out_path}/Main_blade.curve', "w") as f:
                 for i in range(n_profiles): 
                     x_to_store = geometry[0][i*512:(i+1)*512]
                     y_to_store = geometry[1][i*512:(i+1)*512]
@@ -2458,8 +2460,6 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
 
                     # ax_3D.plot(x_to_store, y_to_store, z_to_store, markersize=1)
                     # ax.plot(x_to_store, (y_to_store**2 + z_to_store**2)**0.5, markersize=1)
-
-
 
                     if i == 0:
                         x_hub = x_to_store[:250][::-1]
@@ -2477,6 +2477,13 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                     if i != n_profiles- 1:
                         f.write("\n")
             
+            # write the number of profiles
+            with open(f'{out_path}/Blade_number.txt', "w") as f:
+                f.write(f"Main Blade: {number_of_blades}\n")
+                f.write(f"Splitter Blade: {splitter_blades}\n")
+
+
+
             # write the hub and shroud curve files
             r_1_tip = geometry_1D['R_tip_1']
             r_2 = geometry_1D['R_mean_2']
@@ -3090,7 +3097,8 @@ def visualise_the_extrapolation_testing_set():
 
     # change this line 
     coordinate_results = pd.read_csv('mdl_validation/coordinates_pareto_extrapolation.csv')
-    sdf_results = pd.read_csv('mdl_validation/pareto_optimisation_1.05_CL_0.95_CD.csv')
+    # sdf_results = pd.read_csv('mdl_validation/pareto_optimisation_1.05_CL_0.95_CD.csv')
+    sdf_results = pd.read_csv('mdl_validation/sdf_pareto_extrapolation.csv')
     pca_results = pd.read_csv('mdl_validation/pca_pareto_extrapolation.csv')
 
 
@@ -3106,11 +3114,11 @@ def visualise_the_extrapolation_testing_set():
 
     
     ax.scatter(all['CD'], all['CL'], s=1, color = 'grey', label = 'training data')
-    # ax.scatter(interpolation['CD'], interpolation['CL'], s=10, color = 'g', label = 'interpolation')
-    ax.scatter(extrapolation['CD'], extrapolation['CL'], s=10, color = 'b', label = 'Pareto front')
+    ax.scatter(extrapolation['CD'], extrapolation['CL'], s=20, color = 'b', label = 'Pareto front')
+    ax.scatter((extrapolation['CD']*0.95), (extrapolation['CL']*1.05), s=20, color = 'g', label = 'optimisation target')
 
 
-    for i in range(10):
+    for i in range(20):
         selected_coordinates = coordinate_results[coordinate_results['idx']==i+1]
         
 
@@ -3119,23 +3127,21 @@ def visualise_the_extrapolation_testing_set():
 
         max_row_coordinates = selected_coordinates.loc[selected_coordinates['CL_actual'].idxmax()]
 
-        # max_row = selected.loc[(selected['CL_actual'] / selected['CD_actual']).idxmax()]
+        
         ax.scatter(max_row_coordinates['CD_actual'], max_row_coordinates['CL_actual'], marker = 'o', s=20, color = 'r', label='optimised (coordinates)' if i == 0 else None)
     
 
         selected_pca = pca_results[pca_results['idx']==i+1]
         max_row_pca = selected_pca.loc[selected_pca['CL_actual'].idxmax()]
-        # max_row = selected.loc[(selected['CL_actual'] / selected['CD_actual']).idxmax()]
-        ax.scatter(max_row_pca['CD_actual'], max_row_pca['CL_actual'], marker = 'x', s=20, color = 'g', label='optimised (PCA)' if i == 0 else None)
+        
+        ax.scatter(max_row_pca['CD_actual'], max_row_pca['CL_actual'], s=20, color = 'purple', label='optimised (PCA)' if i == 0 else None)
     
         selected_sdf = sdf_results[sdf_results['idx']==i+1]
         max_row_sdf = selected_sdf.loc[selected_sdf['CL_actual'].idxmax()]
-        # max_row = selected.loc[(selected['CL_actual'] / selected['CD_actual']).idxmax()]
-        ax.scatter(max_row_sdf['CD_actual'], max_row_sdf['CL_actual'], marker = '*', s=20, color = 'orange', label='optimised (SDF)' if i == 0 else None)
+        
+        ax.scatter(max_row_sdf['CD_actual'], max_row_sdf['CL_actual'], s=20, color = 'orange', label='optimised (SDF)' if i == 0 else None)
 
     
-    # ax.scatter(pareto['CD'], pareto['CL'], s=10, color = 'b', label = 'Pareto front')
-    # ax.scatter(intermediate['CD'], intermediate['CL'], s=4, color = 'purple', label = 'intermediate')
     ax.set_xlabel("Drag Coefficient ($C_D$)", fontsize = 14)
     ax.set_ylabel("Lift Coefficient ($C_L$)", fontsize = 14)
     ax.set_xlim(0, 0.05)
