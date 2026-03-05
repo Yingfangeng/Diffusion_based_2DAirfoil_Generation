@@ -1616,7 +1616,7 @@ def validation_1D(mode, device, sample_number, model, num_steps, manual_seed, mu
         
         while design < multiple_design:
 
-            number_of_trials = 1
+            number_of_trials = 0
             success = False
 
             geometry_list = []
@@ -1647,6 +1647,15 @@ def validation_1D(mode, device, sample_number, model, num_steps, manual_seed, mu
 
 
                 denormalised_geometry = sample * (maxs + deviation - mins) + mins
+                
+
+                if round(sample[11]) == 0:
+                    number_of_blades = 5
+                    splitter_blades = 0
+                else:
+                    number_of_blades = 6
+                    splitter_blades = 0
+
 
                 geometry  = {
                     'imp_type': 'Centrifugal', 
@@ -1667,8 +1676,8 @@ def validation_1D(mode, device, sample_number, model, num_steps, manual_seed, mu
                     'L_z': float(denormalised_geometry[9]), 
                     't': float(denormalised_geometry[10]), 
                     's': 0.0003,
-                    'nblades': math.ceil(denormalised_geometry[11]),
-                    'n_splitter_blades': math.ceil(denormalised_geometry[11])/2, # ensure equal number of main and splitter blades
+                    'nblades': number_of_blades,
+                    'n_splitter_blades': splitter_blades, # ensure equal number of main and splitter blades
                     'b3': float(denormalised_geometry[13]), 
                     'r3': float(denormalised_geometry[14]),
                     'slip_factor': float(denormalised_geometry[15])}
@@ -1718,19 +1727,31 @@ def validation_1D(mode, device, sample_number, model, num_steps, manual_seed, mu
                 print(f'The best geometry: {geometry}')
             
             multiple_design_geometry.append(geometry)
+            
+            compressor_code = f'{m_dot:.2f}_{int(RPM)}_{pr_original:.2f}_{eta_original:.2f}_design_{design}'
+            out_csv = f'generated_compressor_3D_geometry/{compressor_code}.csv'
+
+            row = geometry.copy()
+            row['m_dot'] = m_dot
+            row['omega'] = omega
+            row['pressure_ratio'] = pr_original
+            row['efficiency'] = eta_original
+            pd.DataFrame([row]).to_csv(out_csv, mode="a", header=True, index=False)
+
+
             print(geometry)
             print(m_dot, omega)
 
         
-        if plot_blade_distribution:
+        # if plot_blade_distribution:
             
-            compressor_code = f'{m_dot:.2f}_{int(RPM)}_{pr_original:.2f}_{eta_original:.2f}'
-            print(f'Plotting the blade distribution. Compressor code: {compressor_code}')
-            if convert_1D_to_3D:
-                print('Converting from 1D to 3D.')
-            convert_1D_to_3D(multiple_design_geometry, compressor_code, convert_to_3D)
-            visualise_3D(compressor_code, m_dot, RPM, pr_original, eta_original, convert_to_3D, multiple_design_geometry)
-            off_design_plot_1D(multiple_design_geometry, m_dot, omega, pr, eta)
+        #     compressor_code = f'{m_dot:.2f}_{int(RPM)}_{pr_original:.2f}_{eta_original:.2f}'
+        #     print(f'Plotting the blade distribution. Compressor code: {compressor_code}')
+        #     if convert_1D_to_3D:
+        #         print('Converting from 1D to 3D.')
+        #     convert_1D_to_3D(multiple_design_geometry, compressor_code, convert_to_3D)
+        #     visualise_3D(compressor_code, m_dot, RPM, pr_original, eta_original, convert_to_3D, multiple_design_geometry)
+        #     off_design_plot_1D(multiple_design_geometry, m_dot, omega, pr, eta)
 
 
 
@@ -2176,6 +2197,8 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
 
     df, min_max, val_indices = load_1D_dataset()
 
+    if smoothening:
+        print('Smoothening is enabled')
 
 
     df_2 = pd.read_csv('dataset/1D_compressor_geometry_no_splitter_filtered.csv')
@@ -2360,7 +2383,7 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                 x_min_denormalised = xc_min * (x_min_max - x_min_min) + x_min_min
                 x_max_denormalised = xc_max * (x_max_max - x_max_min) + x_max_min
 
-                print(r_min_denormalised, r_max_denormalised, x_min_denormalised, x_max_denormalised)
+                # print(r_min_denormalised, r_max_denormalised, x_min_denormalised, x_max_denormalised)
 
 
                 r = r_normalised * (r_max_denormalised - r_min_denormalised) + r_min_denormalised 
@@ -2370,7 +2393,7 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                 x, y, z = cyl_to_cart_about_x(x, r, theta)
                 
                 if smoothening:
-                    print('Smoothening is enabled')
+                    
                     x, y, z = smoothening_3D(x,y,z, 3, 11) # third order polynomial fit with window of 11
 
                 if round(n_blades) == 0:
@@ -2389,7 +2412,7 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                 omega = omega_normalised*(min_max.loc['omega', 'max']  - min_max.loc['omega', 'min']) + min_max.loc['omega', 'min']
                 pr_original = pr_normalised*(min_max.loc['pressure_ratio', 'max']  - min_max.loc['pressure_ratio', 'min']) + min_max.loc['pressure_ratio', 'min']
                 eta_original = eta_normalised*(min_max.loc['efficiency', 'max']  - min_max.loc['efficiency', 'min']) + min_max.loc['efficiency', 'min']
-                # print('m_dot', m_dot, 'omega', omega)
+                print('m_dot', m_dot, 'omega', omega)
                 
                 RPM = (omega*60)/(2*np.pi)
 
@@ -2443,11 +2466,6 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
 
             print(f'Generated geometry saved to {out_path}')
             n_profiles = len(geometry[0]) // 512
-            # print(n_profiles, 'profiles')
-            
-            # print(x_1.shape, x_2.shape, 'The two tensor shapes')
-            # print('The similarity score:', structural_similarity_index_measure(x_1, x_2).item())
-            
             
             
             # write the blade profile curve file
@@ -2488,8 +2506,6 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
             r_1_tip = geometry_1D['R_tip_1']
             r_2 = geometry_1D['R_mean_2']
             b_2 = geometry_1D['b_2']
-            print(geometry_1D['beta_b1_hub'], geometry_1D['beta_b1_tip'])
-            print(geometry_1D['R_tip_1'], geometry_1D['b_2'])
             create_hub_curve_file(x_hub, r_hub, r_1_tip, r_2, compressor_code, vaneless_existence = True, pinching = True)
             create_shroud_curve_file(x_tip, r_tip, compressor_code, r_1_tip, r_2, b_2, vaneless_existence = True, pinching = True)
 
@@ -2881,7 +2897,9 @@ def model_deployment(mode, model_config_path, aux_model_config_path = None, samp
         
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         aux_model = aux_model.to(device)
-
+        
+        total_params_aux = sum(p.numel() for p in aux_model.parameters())
+        print(f"Auxiliary model parameters: {total_params_aux:,}")
 
 
 
@@ -2984,8 +3002,6 @@ def model_deployment(mode, model_config_path, aux_model_config_path = None, samp
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Main model parameters: {total_params:,}")
 
-    total_params_aux = sum(p.numel() for p in aux_model.parameters())
-    print(f"Auxiliary model parameters: {total_params_aux:,}")
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
