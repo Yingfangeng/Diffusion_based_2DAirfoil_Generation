@@ -2075,7 +2075,7 @@ def create_hub_curve_file(x_hub, r_hub, r_1_tip, r_2, compressor_code, vaneless_
 
 
 
-def create_shroud_curve_file(x_shroud, r_shroud, compressor_code, r_1_tip, r_2, b_2, vaneless_existence = True, pinching = True):
+def create_shroud_curve_file(x_shroud, r_shroud, compressor_code, r_1_tip, r_2, b_2, vaneless_existence = True, pinching = True, area_ratio = 0.4):
     
     r_2 = r_2 * 1000
     b_2 = b_2 * 1000
@@ -2090,9 +2090,7 @@ def create_shroud_curve_file(x_shroud, r_shroud, compressor_code, r_1_tip, r_2, 
     NUM_PINCH_PTS      = 50      # pts *excluding* the first node (so +1 later)
 
 
-    curve_path = f'generated_compressor_3D_geometry/{compressor_code}/Shroud.curve'
 
-    
     hub_curve_path = f'generated_compressor_3D_geometry/{compressor_code}/Hub.curve'
     
     with open(hub_curve_path, 'r') as hf:
@@ -2164,10 +2162,13 @@ def create_shroud_curve_file(x_shroud, r_shroud, compressor_code, r_1_tip, r_2, 
 
     if pinching:
         r_s_end = r_s_current * 1.211
-        area_ratio = 0.4
-
+        
+        curve_path = f'generated_compressor_3D_geometry/{compressor_code}/Shroud_pinching_{area_ratio}.curve'
         x_h = last_hub_x
-        x_s_end = x_h + (r_s_current * (x_s_current - x_h) * area_ratio) / r_s_end
+
+        print(x_h - x_s_current)
+        x_s_end = x_h - (r_s_current * (x_h - x_s_current) * area_ratio) / r_s_end
+        print(x_s_end)
 
         num_total = NUM_PINCH_PTS + 1
 
@@ -2177,12 +2178,13 @@ def create_shroud_curve_file(x_shroud, r_shroud, compressor_code, r_1_tip, r_2, 
             x = x_s_current + (x_s_end - x_s_current) * (1 - math.cos(math.pi * t)) / 2
             all_lines.append(f"{x} {r} {0}\n")
         print(f"Shroud curve file created at {curve_path} (included pinching phase).")
+        
+        with open(curve_path, 'w') as f_out:
+            f_out.writelines(all_lines)
     else:
         print(f"Shroud curve file created at {curve_path} (pinching phase skipped).")
-
-
-    with open(curve_path, 'w') as f_out:
-        f_out.writelines(all_lines)
+        with open(curve_path, 'w') as f_out:
+            f_out.writelines(all_lines)
 
 
 
@@ -2404,7 +2406,7 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                     splitter_blades = 0
 
                 geometry_1D = geometry_3D_to_1D_conversion(x,y,z, number_of_blades, splitter_blades, ax_3D)
-                    
+                print(geometry_1D['R_mean_2'], geometry_1D['b_2'])
                     
 
 
@@ -2507,7 +2509,7 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
             r_2 = geometry_1D['R_mean_2']
             b_2 = geometry_1D['b_2']
             create_hub_curve_file(x_hub, r_hub, r_1_tip, r_2, compressor_code, vaneless_existence = True, pinching = True)
-            create_shroud_curve_file(x_tip, r_tip, compressor_code, r_1_tip, r_2, b_2, vaneless_existence = True, pinching = True)
+            create_shroud_curve_file(x_tip, r_tip, compressor_code, r_1_tip, r_2, b_2, vaneless_existence = True, pinching = True, pinching_ratio_list= [0.2725338])
 
 
             ax_3D.scatter(geometry[0], geometry[1], geometry[2], s=1)
@@ -3417,20 +3419,27 @@ def compare_3D_distribution(mode):
     fig, ax = plt.subplots()
     fig_2, ax_2 = plt.subplots()
     fig_3, ax_3 = plt.subplots()
+    fig_4, ax_4 = plt.subplots()
     cmap = plt.get_cmap("tab10")
     
-    directory = "dataset/physical_distribution_reversed"
-    all_files = sorted(os.listdir(directory))
+    physical_distribution = "dataset/physical_distribution"
+    model_generated_distribution_3D = "generated_compressor_3D_geometry/model_generated_distribution_3D"
+    model_generated_distribution_1D = "dataset/model_generated_distribution_1D"
+    
+    physical_distribution_files = sorted(os.listdir(physical_distribution))
+    model_generated_distribution_3D_files = sorted(os.listdir(model_generated_distribution_3D))
+    model_generated_distribution_1D_files = sorted(os.listdir(model_generated_distribution_1D))
+    physical_distribution_files = sorted(os.listdir(physical_distribution))
+    physical_distribution_files = physical_distribution_files[:100]
 
-    selected_files = all_files[250:350]
 
     if mode == 'individual':
         
 
-        # Model generated distribution
+        # 3D model generated distribution
         for compressor_index in range(100):
             color = cmap(compressor_index % 10)
-            profiles, error = load_blade_curve(f'generated_compressor_3D_geometry/model_generated_distribution/0.08_85000_3.59_0.80_design_{compressor_index+1}/Main_blade.curve')
+            profiles, error = load_blade_curve(f'{model_generated_distribution_3D}/0.10_80000_2.70_0.82_design_{compressor_index+1}/Main_blade.curve')
             profiles = [profiles[0], profiles[-1]]
             for profile in profiles:
                 x = profile[:, 0]
@@ -3440,44 +3449,70 @@ def compare_3D_distribution(mode):
                 ax.scatter(x,(y**2+z**2)**0.5, s=1, color = color)
                 ax.axis('equal')
                 ax.set_ylim(5,50)
+                ax.set_title('3D model generated distribution')
         
+
+        # 1D model generated distribution
+        for compressor_index in range(100):
+            color = cmap(compressor_index % 10)
+            
+            try: 
+                profiles, error = load_blade_curve(f'{model_generated_distribution_1D}/compressor_{compressor_index+1}.curve')
+                profiles = [profiles[0], profiles[-1]]
+                for profile in profiles:
+                    x = profile[:, 0]
+                    y = profile[:, 1]
+                    z = profile[:, 2]
+
+                    ax_2.scatter(x,(y**2+z**2)**0.5, s=1, color = color)
+                    ax_2.axis('equal')
+                    ax_2.set_ylim(5,50)
+                    ax_2.set_title('1D model generated distribution')
+            except FileNotFoundError:
+                pass
+
+
 
         # Training data distribution
-        # df = pd.read_csv('dataset/OLD_NO_USE/1D_compressor_geometry.csv')
+        df = pd.read_csv('dataset/1D_compressor_geometry.csv')
         
-        # target_efficiency = 0.8004911799854328
-        # target_pressure_ratio =  3.591969416336344
+        target_efficiency = 0.817319913047312
+        target_pressure_ratio =  2.698938227209207
 
-        # compressor_index_list =[]
+        compressor_index_list =[]
 
-        # for _, row in df.iterrows():
-        #     if row['m_dot'] == 0.0825:
-        #         if row['omega'] == 8901.17918517108:
-        #             if 100*(abs((row['efficiency'] - target_efficiency)/target_efficiency)) < 1:
-        #                 if 100*(abs((row['pressure_ratio'] - target_pressure_ratio)/target_pressure_ratio)) < 1:
-        #                     compressor_index_list.append(row['geometry_index'])
+        for _, row in df.iterrows():
+            if row['m_dot'] == 0.10:
+                if row['omega'] == 8377.580409572782:
+                    if 100*(abs((row['efficiency'] - target_efficiency)/target_efficiency)) < 1:
+                        if 100*(abs((row['pressure_ratio'] - target_pressure_ratio)/target_pressure_ratio)) < 1:
+                            compressor_index_list.append(row['geometry_index'])
                             
 
 
-        # print(f'There are {len(compressor_index_list)} that can satisfy the condition in the training set.')
-        # for compressor_index in compressor_index_list:
-        #     profiles, _ = load_blade_curve(f'dataset/OLD_NO_USE/3D_compressor_16_profiles/compressor_{compressor_index}.curve')
-        #     color = cmap(compressor_index % 10)
-        #     profiles = [profiles[0], profiles[-1]]
-        #     for profile in profiles:
-        #         x = profile[:, 0]
-        #         y = profile[:, 1]
-        #         z = profile[:, 2]
+        print(f'There are {len(compressor_index_list)} that can satisfy the condition in the training set.')
+        for compressor_index in compressor_index_list:
+            try: 
+                profiles, _ = load_blade_curve(f'dataset/3D_compressor/compressor_{compressor_index}.curve')
+                color = cmap(compressor_index % 10)
+                profiles = [profiles[0], profiles[-1]]
+                for profile in profiles:
+                    x = profile[:, 0]
+                    y = profile[:, 1]
+                    z = profile[:, 2]
 
-        #         ax_2.scatter(x,(y**2 + z**2)**0.5, s=1, color = color)
-        #         ax_2.axis('equal')
-        #         ax_2.set_ylim(5,50)
+                    ax_4.scatter(x,(y**2 + z**2)**0.5, s=1, color = color)
+                    ax_4.axis('equal')
+                    ax_4.set_ylim(5,50)
+                    ax_4.set_title('Training data distribution')
+            except FileNotFoundError:
+                pass
         
-        
+
         # Physical distribution
-        for compressor_index in range(445):
+        for compressor_index, file in enumerate(physical_distribution_files):
             color = cmap(compressor_index % 10)
-            profiles, error = load_blade_curve(f'dataset/physical_distribution_blades/compressor_{compressor_index+1}.curve')
+            profiles, error = load_blade_curve(f'dataset/physical_distribution/{file}')
             profiles = [profiles[0], profiles[-1]]
             for profile in profiles:
                 x = profile[:, 0]
@@ -3487,11 +3522,11 @@ def compare_3D_distribution(mode):
                 ax_3.scatter(x,(y**2+z**2)**0.5, s=1, color = color)
                 ax_3.axis('equal')
                 ax_3.set_ylim(5,50)
+                ax_3.set_title('Physical distribution')
     
     elif mode == 'heatmap':
         
         def plot_kde(ax, X, R):
-
 
             values = np.vstack([X, R])
             kde = gaussian_kde(values)
@@ -3510,50 +3545,70 @@ def compare_3D_distribution(mode):
 
 
         # Model generated
-        # X1, R1 = [], []
-        # for compressor_index in range(100):
-        #     profiles, _ = load_blade_curve(f'generated_compressor_3D_geometry/model_generated_distribution/0.08_85000_3.59_0.80_design_{compressor_index+1}/Main_blade.curve')
-        #     profiles = [profiles[0], profiles[-1]]
-        #     for profile in profiles:
-        #         x = profile[:, 0]
-        #         r = np.sqrt(profile[:,1]**2 + profile[:,2]**2)
-        #         X1.append(x); R1.append(r)
+        X1, R1 = [], []
+        for compressor_index in range(100):
+            profiles, _ = load_blade_curve(f'{model_generated_distribution_3D}/0.10_80000_2.70_0.82_design_{compressor_index+1}/Main_blade.curve')
+            profiles = [profiles[0], profiles[-1]]
+            for profile in profiles:
+                x = profile[:, 0]
+                r = np.sqrt(profile[:,1]**2 + profile[:,2]**2)
+                X1.append(x); R1.append(r)
 
-        # plot_kde(ax, np.concatenate(X1), np.concatenate(R1))
+        plot_kde(ax, np.concatenate(X1), np.concatenate(R1))
+        ax.set_title('3D Model Generated Distribution')
+
+
+        # 1D Model generated
+        X2, R2 = [], []
+        for compressor_index in range(100):
+            try: 
+                profiles, _ = load_blade_curve(f'{model_generated_distribution_1D}/compressor_{compressor_index+1}.curve')
+                profiles = [profiles[0], profiles[-1]]
+                for profile in profiles:
+                    x = profile[:, 0]
+                    r = np.sqrt(profile[:,1]**2 + profile[:,2]**2)
+                    X2.append(x); R2.append(r)
+            except FileNotFoundError:
+                pass
+        plot_kde(ax_2, np.concatenate(X2), np.concatenate(R2))
+        ax_2.set_title('1D Model Generated Distribution')
+
 
 
         # Training data
-        # df = pd.read_csv('dataset/OLD_NO_USE/1D_compressor_geometry.csv')
+        df = pd.read_csv('dataset/1D_compressor_geometry.csv')
         
-        # target_efficiency = 0.8004911799854328
-        # target_pressure_ratio =  3.591969416336344
+        target_efficiency = 0.817319913047312
+        target_pressure_ratio =  2.698938227209207
 
-        # compressor_index_list =[]
+        compressor_index_list =[]
 
-        # for _, row in df.iterrows():
-        #     if row['m_dot'] == 0.0825:
-        #         if row['omega'] == 8901.17918517108:
-        #             if 100*(abs((row['efficiency'] - target_efficiency)/target_efficiency)) < 1:
-        #                 if 100*(abs((row['pressure_ratio'] - target_pressure_ratio)/target_pressure_ratio)) < 1:
-        #                     compressor_index_list.append(row['geometry_index'])
+        for _, row in df.iterrows():
+            if row['m_dot'] == 0.1:
+                if row['omega'] == 8377.580409572782:
+                    if 100*(abs((row['efficiency'] - target_efficiency)/target_efficiency)) < 1:
+                        if 100*(abs((row['pressure_ratio'] - target_pressure_ratio)/target_pressure_ratio)) < 1:
+                            compressor_index_list.append(row['geometry_index'])
                             
 
-        # X2, R2 = [], []
-        # for compressor_index in compressor_index_list:
-        #     profiles, _ = load_blade_curve(f'dataset/OLD_NO_USE/3D_compressor_16_profiles/compressor_{compressor_index}.curve')
-        #     profiles = [profiles[0], profiles[-1]]
-        #     for profile in profiles:
-        #         x = profile[:, 0]
-        #         r = np.sqrt(profile[:,1]**2 + profile[:,2]**2)
-        #         X2.append(x); R2.append(r)
-
-        # plot_kde(ax_2, np.concatenate(X2), np.concatenate(R2))
-
+        X4, R4 = [], []
+        for compressor_index in compressor_index_list:
+            try:
+                profiles, _ = load_blade_curve(f'dataset/3D_compressor/compressor_{compressor_index}.curve')
+                profiles = [profiles[0], profiles[-1]]
+                for profile in profiles:
+                    x = profile[:, 0]
+                    r = np.sqrt(profile[:,1]**2 + profile[:,2]**2)
+                    X4.append(x); R4.append(r)
+            except FileNotFoundError:
+                pass
+        plot_kde(ax_4, np.concatenate(X4), np.concatenate(R4))
+        ax_4.set_title('Training Data Distribution')
 
         # Physical
         X3, R3 = [], []
-        for file in selected_files:
-            profiles, _ = load_blade_curve(f'dataset/physical_distribution_reversed/{file}')
+        for file in physical_distribution_files:
+            profiles, _ = load_blade_curve(f'dataset/physical_distribution/{file}')
             profiles = [profiles[0], profiles[-1]]
             for profile in profiles:
                 x = profile[:, 0]
@@ -3561,3 +3616,54 @@ def compare_3D_distribution(mode):
                 X3.append(x); R3.append(r)
 
         plot_kde(ax_3, np.concatenate(X3), np.concatenate(R3))
+        ax_3.set_title('Physical Distribution')
+
+
+
+
+
+
+def create_shroud_pinching_from_blade(compressor_code, pinching_ratio):
+
+    
+
+
+    profiles, _ = load_blade_curve(f'generated_compressor_3D_geometry/{compressor_code}/Main_blade.curve')
+
+
+
+    fig, ax = plt.subplots()
+    x_list = []
+    y_list = []
+    z_list = []
+
+    for idx, profile in enumerate(profiles):
+        x = profile[:,0]
+        y = profile[:,1]
+        z = profile[:,2]
+
+        if idx == 0:
+            x_hub = x[:250][::-1]
+            r_hub = ((y[:250][::-1])**2 + (z[:250][::-1])**2)**0.5
+
+        elif idx == 15:
+            x_tip = x[:247][::-1]
+            r_tip = ((y[:247][::-1])**2 + (z[:247][::-1])**2)**0.5
+
+        x_list.append(x)
+        y_list.append(y)
+        z_list.append(z)
+        ax.scatter(x, (y**2 + z**2)**0.5, s = 1, color = 'b')
+    plt.show()
+
+    x = np.concatenate(x_list)
+    y = np.concatenate(y_list)
+    z = np.concatenate(z_list)
+
+    geometry_1D = geometry_3D_to_1D_conversion(x,y,z, 6, 0, ax)
+    r_1_tip = geometry_1D['R_tip_1']
+    r_2 = geometry_1D['R_mean_2']
+    b_2 = geometry_1D['b_2']
+
+
+    create_shroud_curve_file(x_tip, r_tip, compressor_code, r_1_tip, r_2, b_2, vaneless_existence = True, pinching = True, area_ratio = pinching_ratio)

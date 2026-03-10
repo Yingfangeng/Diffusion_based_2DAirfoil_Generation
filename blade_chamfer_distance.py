@@ -49,21 +49,21 @@ def load_blade_curve(filename):
 
 
 
-# def compute_chamfer_distance(A, B):
-#     final_distance = 0
-#     for a in tqdm(A):
-#         distance_list = []
-#         for b in B:
-#             distance = np.sqrt(np.mean(np.sum((a - b) ** 2, axis=1)))
-#             distance_list.append(distance)
-#         final_distance += min(distance_list)
-#     return final_distance / len(A)
-
-
-
-
-
 def compute_chamfer_distance(A, B):
+    final_distance = 0
+    for a in tqdm(A):
+        distance_list = []
+        for b in B:
+            distance = np.sqrt(np.mean(np.sum((a - b) ** 2, axis=1)))
+            distance_list.append(distance)
+        final_distance += min(distance_list)
+    return final_distance / len(A)
+
+
+
+
+
+def compute_chamfer_distance_and_ssim(A, B):
     final_distance = 0.0
     for a in A:
         distance_list = []
@@ -95,8 +95,8 @@ def kernel_density_estimate_3D(X):
 
     X = np.concatenate(X, axis=0)
 
-    bandwidth=1.0
-    grid_res=30
+    bandwidth = 1.0
+    grid_res = 30
 
     kde = KernelDensity(kernel="gaussian", bandwidth=bandwidth).fit(X)
 
@@ -138,35 +138,48 @@ def kde_distribution_difference(P, Q):
 def distribution_compare():
 
 
-    directory = "dataset/physical_distribution_reversed"
+    physical_distribution_path = "dataset/physical_distribution"
+    physical_distribution_files = sorted(os.listdir(physical_distribution_path))  # ensure deterministic order
 
-    all_files = sorted(os.listdir(directory))  # ensure deterministic order
+    physical_distribution_file_selected_1 = physical_distribution_files[150:250]
+    physical_distribution_file_selected_2 = physical_distribution_files[250:350]
+    # print(f'There are {len(physical_distribution_file_selected_1)} physical generated profiles.')
 
-    selected_files = all_files[:100]
-    selected_files_2 = all_files[100:200]
+    model_generated_distribution_3D_path = "generated_compressor_3D_geometry/model_generated_distribution_3D"
+    model_generated_distribution_3D_files = sorted(os.listdir(model_generated_distribution_3D_path))
+    # print(f'There are {len(model_generated_distribution_3D_files)} 3D model generated profiles.')
 
+    model_generated_distribution_1D_path = "dataset/model_generated_distribution_1D"
+    model_generated_distribution_1D_files = sorted(os.listdir(model_generated_distribution_1D_path))
+    # print(f'There are {len(model_generated_distribution_1D_files)} 1D model generated profiles.')
 
-    model_generated_distribution = []
-    model_generated_distribution_2 = []
-    physical_distribution = []
+    model_generated_distribution_3D = []
+    model_generated_distribution_1D = []
+  
+    physical_distribution_1 = []
     physical_distribution_2 = []
     
-    for file in selected_files:
-        profiles, _ = load_blade_curve(f'dataset/physical_distribution_reversed/{file}')
-        physical_distribution.append(np.concatenate(profiles, axis=0).astype(np.float64))        
+    for file in physical_distribution_file_selected_1:
+        profiles, _ = load_blade_curve(f'dataset/physical_distribution/{file}')
+        physical_distribution_1.append(np.concatenate(profiles, axis=0).astype(np.float64))        
 
 
-    for file in selected_files_2:
-        profiles, _ = load_blade_curve(f'dataset/physical_distribution_reversed/{file}')
-        physical_distribution_2.append(np.concatenate(profiles, axis=0).astype(np.float64))        
+
+    for file in physical_distribution_file_selected_2:
+        profiles, _ = load_blade_curve(f'dataset/physical_distribution/{file}')
+        physical_distribution_2.append(np.concatenate(profiles, axis=0).astype(np.float64))
 
 
-    for compressor_index in range(100):
-        profiles, _ = load_blade_curve(f'generated_compressor_3D_geometry/model_generated_distribution/0.08_85000_3.59_0.80_design_{compressor_index+1}/Main_blade.curve')
-        model_generated_distribution.append(np.concatenate(profiles, axis=0).astype(np.float64))
+    for file in model_generated_distribution_3D_files:
+        profiles, _ = load_blade_curve(f'generated_compressor_3D_geometry/model_generated_distribution_3D/{file}/Main_blade.curve')
+        model_generated_distribution_3D.append(np.concatenate(profiles, axis=0).astype(np.float64))
+
+    for file in model_generated_distribution_1D_files:
+        profiles, _ = load_blade_curve(f'dataset/model_generated_distribution_1D/{file}')
+        model_generated_distribution_1D.append(np.concatenate(profiles, axis=0).astype(np.float64))
 
 
-    assert len(physical_distribution) == len(physical_distribution_2)
+    assert len(physical_distribution_1) == len(physical_distribution_2)
 
     
     # physical_distribution_density = kernel_density_estimate_3D(physical_distribution)
@@ -176,18 +189,34 @@ def distribution_compare():
     # difference = kde_distribution_difference(physical_distribution_density, physical_distribution_density_2)
     # print(difference, 'difference')
 
-    final_distance_1 = compute_chamfer_distance(model_generated_distribution, physical_distribution)
-    final_distance_2 = compute_chamfer_distance(physical_distribution, model_generated_distribution)
-    print("The chamfer distances between the model generated blade distribution and the physical distribution") 
+    # final_distance_1 = compute_chamfer_distance_and_ssim(model_generated_distribution_3D, physical_distribution)
+    # final_distance_2 = compute_chamfer_distance_and_ssim(physical_distribution, model_generated_distribution_3D)
+    # print("The SSIM between the model generated blade distribution and the physical distribution") 
+    # print(final_distance_1, final_distance_2, np.mean([final_distance_1, final_distance_2]))
+
+
+    # final_distance_1 = compute_chamfer_distance_and_ssim(physical_distribution, physical_distribution_2)
+    # final_distance_2 = compute_chamfer_distance_and_ssim(physical_distribution_2, physical_distribution)
+    # print("The SSIM between two physical distributions")
+    # print(final_distance_1, final_distance_2, np.mean([final_distance_1, final_distance_2]))
+
+
+
+    final_distance_1 = compute_chamfer_distance(model_generated_distribution_3D, physical_distribution_1)
+    final_distance_2 = compute_chamfer_distance(physical_distribution_1, model_generated_distribution_3D)
+    print("The CD between the 3D model generated blade distribution and the physical distribution") 
     print(final_distance_1, final_distance_2, np.mean([final_distance_1, final_distance_2]))
 
 
-    final_distance_1 = compute_chamfer_distance(physical_distribution, physical_distribution_2)
-    final_distance_2 = compute_chamfer_distance(physical_distribution_2, physical_distribution)
-    print("The chamfer distances between two physical distributions")
+    final_distance_1 = compute_chamfer_distance(model_generated_distribution_1D, physical_distribution_1)
+    final_distance_2 = compute_chamfer_distance(physical_distribution_1, model_generated_distribution_1D)
+    print("The CD between the 1D model generated blade distribution and the physical distribution") 
     print(final_distance_1, final_distance_2, np.mean([final_distance_1, final_distance_2]))
 
-
+    final_distance_1 = compute_chamfer_distance(physical_distribution_1, physical_distribution_2)
+    final_distance_2 = compute_chamfer_distance(physical_distribution_2, physical_distribution_1)
+    print("The CD between two physical distributions")
+    print(final_distance_1, final_distance_2, np.mean([final_distance_1, final_distance_2]))
 
 
 
