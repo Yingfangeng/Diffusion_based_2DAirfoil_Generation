@@ -85,9 +85,9 @@ def save_fig_custom(fig, file_path='', file_name='fig',
                 i = i+1
         
         if save_format == '.png':
-            fig.savefig(file_name_now, facecolor='white', bbox_inches="tight", dpi=dpi)
+            fig.savefig(file_name_now, facecolor='white', bbox_inches="tight", dpi=dpi, transparent=True)
         else:
-            fig.savefig(file_name_now, facecolor='white', bbox_inches="tight")
+            fig.savefig(file_name_now, facecolor='white', bbox_inches="tight", transparent=True)
 
         
         print(file_name_now, 'is saved.')
@@ -2289,8 +2289,8 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                 x, y, z = cyl_to_cart_about_x(x, r, theta)
                 
                 
-                ax_3D.plot(x, y, z, color='r')
-                ax.scatter(x, (y**2 + z**2)**0.5, s = 1, color = 'r')
+                # ax_3D.plot(x, y, z, color='r')
+                # ax.scatter(x, (y**2 + z**2)**0.5, s = 1, color = 'r')
             x_1 = np.concatenate(original_profiles).ravel()
             x_1 = np.expand_dims(x_1, 0)
             x_1 = torch.tensor(x_1, dtype=torch.float32)
@@ -2509,7 +2509,7 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
             r_2 = geometry_1D['R_mean_2']
             b_2 = geometry_1D['b_2']
             create_hub_curve_file(x_hub, r_hub, r_1_tip, r_2, compressor_code, vaneless_existence = True, pinching = True)
-            create_shroud_curve_file(x_tip, r_tip, compressor_code, r_1_tip, r_2, b_2, vaneless_existence = True, pinching = True, pinching_ratio_list= [0.2725338])
+            create_shroud_curve_file(x_tip, r_tip, compressor_code, r_1_tip, r_2, b_2, vaneless_existence = True, pinching = True, area_ratio= 0.4)
 
 
             ax_3D.scatter(geometry[0], geometry[1], geometry[2], s=1)
@@ -2725,7 +2725,7 @@ def denoising_plot_3D(mode, device, sample_number, model, aux_model, num_steps, 
                 
 
                 
-                fig_3D = plt.figure(figsize=(10, 8))
+                fig_3D = plt.figure(figsize=(14, 16))
                 ax_3D = fig_3D.add_subplot(111, projection="3d")
 
                 ax_3D.scatter(x, y, z, color = 'b', s = 1)
@@ -2739,17 +2739,18 @@ def denoising_plot_3D(mode, device, sample_number, model, aux_model, num_steps, 
                 frames_3D.append(frame_path_3D)
 
 
-                fig_3D_norm = plt.figure(figsize=(10, 8))
+                fig_3D_norm = plt.figure(figsize=(14, 16))
                 ax_3D_norm = fig_3D_norm.add_subplot(111, projection="3d")
 
                 ax_3D_norm.scatter(x_normalised, r_normalised, theta_normalised, color = 'b', s = 1)
-                ax_3D_norm.set_xlabel('X')
-                ax_3D_norm.set_ylabel('R')
-                ax_3D_norm.set_zlabel('Theta')
+                # ax_3D_norm.set_xlabel('X')
+                # ax_3D_norm.set_ylabel('R')
+                # ax_3D_norm.set_zlabel('$\\theta$')
+
                 ax_3D_norm.set_xlim(0,1)
                 ax_3D_norm.set_ylim(0,1)
                 ax_3D_norm.set_zlim(0,1)
-
+                ax.tick_params(axis='both', which='major', labelsize=30)
 
                 frame_path_3D_norm = f"{output_dir}/{data_structure}_frame_{i}_3D_norm.png"
                 plt.close(fig_3D_norm)
@@ -2801,7 +2802,7 @@ def denoising_plot_3D(mode, device, sample_number, model, aux_model, num_steps, 
 
                 
 
-                fig_3D = plt.figure(figsize=(10, 8))
+                fig_3D = plt.figure(figsize=(14, 16))
                 ax_3D = fig_3D.add_subplot(111, projection="3d")
                 ax_3D.scatter(x, y, z, color = 'b', s = 1)
                 ax_3D.set_xlabel('X (mm)')
@@ -2816,33 +2817,36 @@ def denoising_plot_3D(mode, device, sample_number, model, aux_model, num_steps, 
                 frames_3D.append(frame_path_3D)
                 
 
-                fig_3D_norm = plt.figure(figsize=(10, 8))
+                fig_3D_norm = plt.figure(figsize=(14, 16))
                 ax_3D_norm = fig_3D_norm.add_subplot(111, projection="3d")
 
                 ax_3D_norm.scatter(x_normalised, r_normalised, theta_normalised, color = 'b', s = 1)
-                ax_3D_norm.set_xlabel('X')
-                ax_3D_norm.set_ylabel('R')
-                ax_3D_norm.set_zlabel('Theta')
-                ax_3D_norm.set_xlim(0,1)
-                ax_3D_norm.set_ylim(0,1)
-                ax_3D_norm.set_zlim(0,1)
+                # ax_3D_norm.set_xlabel('X', fontsize = 20)
+                # ax_3D_norm.set_ylabel('R', fontsize = 20)
+                # ax_3D_norm.set_zlabel('$\\theta$', fontsize = 20)
 
+                ax_3D_norm.set_xlim(-0.05, 1.05)
+                ax_3D_norm.set_ylim(-0.05, 1.05)
+                ax_3D_norm.set_zlim(-0.05, 1.05)
 
+                ax_3D_norm.tick_params(axis='both', which='major', labelsize=30)
+                fig_3D_norm.patch.set_alpha(0)        # figure background
+                ax_3D_norm.patch.set_alpha(0)
                 frame_path_3D_norm = f"{output_dir}/{data_structure}_frame_{i}_3D_norm.png"
                 plt.close(fig_3D_norm)
-                save_fig_custom(fig_3D_norm, file_path='fig', file_name=f'{data_structure}_frame_{i}_3D_norm', overwrite=True, dpi = 200)
+                save_fig_custom(fig_3D_norm, file_path='fig', file_name=f'{data_structure}_frame_{i}_3D_norm', overwrite=True, dpi = 500)
                 frames_3D_norm.append(frame_path_3D_norm)
 
 
-    gif_path = f"denoising_gif/denoising_process_{data_structure}_{num_steps}.gif"
-    save_denoising_gif(gif_path, frames)
+    # gif_path = f"denoising_gif/denoising_process_{data_structure}_{num_steps}.gif"
+    # save_denoising_gif(gif_path, frames)
 
-    gif_path = f"denoising_gif/denoising_process_{data_structure}_{num_steps}_3D.gif"
-    save_denoising_gif(gif_path, frames_3D)
+    # gif_path = f"denoising_gif/denoising_process_{data_structure}_{num_steps}_3D.gif"
+    # save_denoising_gif(gif_path, frames_3D)
 
 
-    gif_path = f"denoising_gif/denoising_process_{data_structure}_{num_steps}_3D_norm.gif"
-    save_denoising_gif(gif_path, frames_3D_norm)
+    # gif_path = f"denoising_gif/denoising_process_{data_structure}_{num_steps}_3D_norm.gif"
+    # save_denoising_gif(gif_path, frames_3D_norm)
 
 
 
