@@ -25,7 +25,7 @@ from scipy.signal import savgol_filter
 import logging
 from torchmetrics.functional.image.ssim import structural_similarity_index_measure
 import ot
-
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 from models.diffusion_model import EDM_CFG, edm_sampler, StackedRandomGenerator
 from meanline.impeller import Blade_Forming_3D
@@ -856,6 +856,10 @@ def validation_accuracy(model_config_path, file_name, band = None, mode = None, 
 
     CL_error = (CL - CL_actual)/CL
     CD_error = (CD - CD_actual)/CD
+    print(max(CL_error))
+    idx = np.argmax(CL_error)
+    print(idx)
+    print(CL[idx])
     
 
     CL_sum_of_square = 0
@@ -876,6 +880,7 @@ def validation_accuracy(model_config_path, file_name, band = None, mode = None, 
             
             if abs(i) < 1:
                 CL_sum_of_square = CL_sum_of_square + i**2
+                
             else:
                 print(f'Outlier in {first_variable_name}')
     CL_rmse = (CL_sum_of_square/len(CL_error))**0.5
@@ -903,10 +908,15 @@ def validation_accuracy(model_config_path, file_name, band = None, mode = None, 
     print(f'{int(100*(CD_in_bound)/(len(CL)))}% samples have {second_variable_name} within {int(band_1*100)}% relative error.')
     print(f'Averaged number of trials {average_design_trials:.2f}, averaged percent of unfeasible designs {total_unfeasible_design_percent:.2f}%.')
 
-    fig, axes = plt.subplots(1,2, figsize=(12,5))
-
+    fig, axes = plt.subplots(1,2, figsize=(15,5))
+    
     ax1 = axes[0]
     ax2 = axes[1]
+
+    # divider = make_axes_locatable(ax1)
+    # ax_top = divider.append_axes("top", size="20%", pad=0.1, sharex=ax1)
+    # ax_right = divider.append_axes("right", size="20%", pad=0.1, sharey=ax1)
+
 
     # CL_padding = 0.1
     # CD_padding = 0.01
@@ -965,6 +975,53 @@ def validation_accuracy(model_config_path, file_name, band = None, mode = None, 
 # )
     
 
+
+    pos = ax1.get_position()
+    gap = 0.01
+    top_frac = 0.20
+    right_frac = 0.20
+
+    ax1.set_position([pos.x0, pos.y0, pos.width - pos.width * right_frac - gap, pos.height])
+    pos = ax1.get_position()
+    
+    ax_top = fig.add_axes([pos.x0, pos.y1, pos.width, pos.height * top_frac], sharex=ax1)
+    ax_right = fig.add_axes([pos.x1, pos.y0, pos.width * right_frac, pos.height], sharey=ax1)
+    kde_x = gaussian_kde(CL)
+    x_vals = np.linspace(CL_axis_lower_limit, CL_axis_upper_limit, 200)
+    x_density = kde_x(x_vals)
+    ax_top.plot(x_vals, x_density, color='b')
+    ax_top.fill_between(x_vals, 0, x_density, color='lightblue', alpha=0.6)
+
+    kde_y = gaussian_kde(CL_actual)
+    y_vals = np.linspace(CL_axis_lower_limit, CL_axis_upper_limit, 200)
+    y_density = kde_y(y_vals)
+    ax_right.plot(y_density, y_vals, color='b')
+    ax_right.fill_betweenx(y_vals, 0, y_density, color='lightblue', alpha=0.6)
+
+    ax_top.set_xlim(ax1.get_xlim())
+    ax_right.set_ylim(ax1.get_ylim())
+    ax_top.margins(x=0, y=0)
+    ax_right.margins(x=0, y=0)
+
+
+    ax_top.set_xlim(ax1.get_xlim())
+    ax_right.set_ylim(ax1.get_ylim())
+
+    ax_top.set_ylim(bottom=0)
+    ax_right.set_xlim(left=0)
+
+    ax_top.margins(x=0, y=0)
+    ax_right.margins(x=0, y=0)
+
+    for spine in ax_top.spines.values():
+        spine.set_visible(False)
+    for spine in ax_right.spines.values():
+        spine.set_visible(False)
+
+    ax_top.axis('off')
+    ax_right.axis('off')
+
+
     # ================================= KDE
     x = np.array(CD)
     y = np.array(CD_actual)
@@ -997,7 +1054,59 @@ def validation_accuracy(model_config_path, file_name, band = None, mode = None, 
     # verticalalignment='bottom',
     # horizontalalignment='right',
     # bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+
+
+    pos = ax2.get_position()
+
+    gap = 0.01
+    top_frac = 0.20
+    right_frac = 0.20
+
+    ax2.set_position([pos.x0, pos.y0, pos.width - pos.width * right_frac - gap, pos.height])
+    pos = ax2.get_position()
+
+
+    ax_top = fig.add_axes([pos.x0, pos.y1, pos.width, pos.height * top_frac], sharex=ax2)
+    ax_right = fig.add_axes([pos.x1, pos.y0, pos.width * right_frac, pos.height], sharey=ax2)
+    kde_x = gaussian_kde(CD)
+    x_vals = np.linspace(CD_axis_lower_limit, CD_axis_upper_limit, 200)
+    x_density = kde_x(x_vals)
+    ax_top.plot(x_vals, x_density, color='b')
+    ax_top.fill_between(x_vals, 0, x_density, color='lightblue', alpha=0.6)
+
+    kde_y = gaussian_kde(CD_actual)
+    y_vals = np.linspace(CD_axis_lower_limit, CD_axis_upper_limit, 200)
+    y_density = kde_y(y_vals)
+    ax_right.plot(y_density, y_vals, color='b')
+    ax_right.fill_betweenx(y_vals, 0, y_density, color='lightblue', alpha=0.6)
+
+    ax_top.set_xlim(ax2.get_xlim())
+    ax_right.set_ylim(ax2.get_ylim())
+    ax_top.margins(x=0, y=0)
+    ax_right.margins(x=0, y=0)
+
+
+
+    ax_top.set_ylim(bottom=0)
+    ax_right.set_xlim(left=0)
+
+    ax_top.margins(x=0, y=0)
+    ax_right.margins(x=0, y=0)
+
+    for spine in ax_top.spines.values():
+        spine.set_visible(False)
+    for spine in ax_right.spines.values():
+        spine.set_visible(False)
+
+    ax_top.axis('off')
+    ax_right.axis('off')
+
+
+
+
     plt.show()
+
+
 
     print(f"{first_variable_name} best-fit-line gradient is:", m_cl)
     print(f"{second_variable_name} best-fit-line gradient is:", m_cd)
@@ -1559,22 +1668,24 @@ def off_design_plot_1D(multi_design_geometry, m_dot_design_point, omega, pr_desi
         
         
         ax.plot(m_dot_list_2, pr_list, color = color, zorder = 1)
-        ax.set_xlabel('Mass Flow Rate (kg/s)')
-        ax.set_ylabel('Pressure Ratio')
+        ax.set_xlabel('Mass Flow Rate (kg/s)', fontsize = 14)
+        ax.set_ylabel('Pressure Ratio', fontsize = 14)
         ax.set_xlim(0.07, 0.12)
         ax.set_ylim(1,4.5)
+        ax.tick_params(axis='both', which='major', labelsize=14)
         ax.grid(True, ls = ':')
-        ax.legend()
+        ax.legend(fontsize = 14)
 
 
         
         ax2.plot(m_dot_list_2, eta_list, color = color, zorder = 1)
-        ax2.set_xlabel('Mass Flow Rate (kg/s)')
-        ax2.set_ylabel('Total Efficiency')
+        ax2.set_xlabel('Mass Flow Rate (kg/s)', fontsize = 14)
+        ax2.set_ylabel('Total Efficiency', fontsize = 14)
         ax2.set_xlim(0.07, 0.12)
         ax2.set_ylim(0.7, 0.9)
+        ax2.tick_params(axis='both', which='major', labelsize=14)
         ax2.grid(True, ls = ':')
-        ax2.legend()
+        ax2.legend(fontsize = 14)
 
         save_fig_custom(fig, file_path='fig', file_name=f'off_design_pr_plot', overwrite=True, dpi = 500)
         save_fig_custom(fig2, file_path='fig', file_name=f'off_design_eta_plot', overwrite=True, dpi = 500)
@@ -2532,10 +2643,12 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                 bbox=dict(boxstyle='round', facecolor='white', alpha=0.65))
         ax.set_xlabel('Axial (mm)')
         ax.set_ylabel('Radial (mm)')
-        ax_3D.set_xlabel('X (mm)')
-        ax_3D.set_ylabel('Y (mm)')
-        ax_3D.set_zlabel('Z (mm)')
-        
+        ax_3D.set_xlabel('X (mm)', fontsize = 14, labelpad = 10)
+        ax_3D.set_ylabel('Y (mm)', fontsize = 14, labelpad = 10)
+        ax_3D.set_zlabel('Z (mm)', fontsize = 14, labelpad = 0)
+        ax_3D.tick_params(axis='both', which='major', labelsize=14)
+        fig_3D.patch.set_alpha(0)
+        ax_3D.patch.set_alpha(0)
 
 
         save_fig_custom(fig_3D, file_path='fig', file_name=f'3D_view_{m_dot:.2f}_{int(RPM)}_{pr_original:.2f}_{eta_original:.2f}', overwrite=True, dpi = 500)
@@ -3418,8 +3531,6 @@ def pca_reconstruct_aerofoil_comparison(component_number):
 
 def compare_3D_distribution(mode):
 
-    # fig_3D = plt.figure(figsize=(10, 8))
-    # ax_3D = fig_3D.add_subplot(111, projection="3d")
     fig, ax = plt.subplots()
     fig_2, ax_2 = plt.subplots()
     fig_3, ax_3 = plt.subplots()
@@ -3434,7 +3545,7 @@ def compare_3D_distribution(mode):
     model_generated_distribution_3D_files = sorted(os.listdir(model_generated_distribution_3D))
     model_generated_distribution_1D_files = sorted(os.listdir(model_generated_distribution_1D))
     physical_distribution_files = sorted(os.listdir(physical_distribution))
-    physical_distribution_files = physical_distribution_files[:100]
+    physical_distribution_files = physical_distribution_files[100:200]
 
 
     if mode == 'individual':
@@ -3540,12 +3651,21 @@ def compare_3D_distribution(mode):
             print('X min', xmin, 'X max', xmax)
             print('R min', rmin, 'R max', rmax)
 
+            xmin = -10
+            xmax = 50
+            rmin = 5
+            rmax = 50
             xi, ri = np.mgrid[xmin:xmax:200j, rmin:rmax:200j]
             zi = kde(np.vstack([xi.ravel(), ri.ravel()])).reshape(xi.shape)
 
-            ax.contourf(xi, ri, zi, levels=50, cmap = 'Reds')
+            # ax.contourf(xi, ri, zi, levels=100, cmap = 'Reds')
+            ax.pcolormesh(xi, ri, zi, cmap='Reds', shading='gouraud')
             ax.axis('equal')
             ax.set_ylim(5, 50)
+            ax.set_xlabel('Axial (mm)', fontsize = 14)
+            ax.set_ylabel('Radial (mm)', fontsize = 14)
+            ax.tick_params(axis='both', which='major', labelsize=14)
+
 
 
         # Model generated
@@ -3559,7 +3679,7 @@ def compare_3D_distribution(mode):
                 X1.append(x); R1.append(r)
 
         plot_kde(ax, np.concatenate(X1), np.concatenate(R1))
-        ax.set_title('3D Model Generated Distribution')
+        # ax.set_title('3D Model Generated Distribution')
 
 
         # 1D Model generated
@@ -3575,7 +3695,7 @@ def compare_3D_distribution(mode):
             except FileNotFoundError:
                 pass
         plot_kde(ax_2, np.concatenate(X2), np.concatenate(R2))
-        ax_2.set_title('1D Model Generated Distribution')
+        # ax_2.set_title('1D Model Generated Distribution')
 
 
 
@@ -3607,7 +3727,7 @@ def compare_3D_distribution(mode):
             except FileNotFoundError:
                 pass
         plot_kde(ax_4, np.concatenate(X4), np.concatenate(R4))
-        ax_4.set_title('Training Data Distribution')
+        # ax_4.set_title('Training Data Distribution')
 
         # Physical
         X3, R3 = [], []
@@ -3620,7 +3740,12 @@ def compare_3D_distribution(mode):
                 X3.append(x); R3.append(r)
 
         plot_kde(ax_3, np.concatenate(X3), np.concatenate(R3))
-        ax_3.set_title('Physical Distribution')
+        # ax_3.set_title('Physical Distribution')
+    
+    save_fig_custom(fig, file_path='fig', file_name=f'3D_model_generated_distribution', overwrite=True, dpi = 500)
+    save_fig_custom(fig_2, file_path='fig', file_name=f'1D_model_generated_distribution', overwrite=True, dpi = 500)
+    save_fig_custom(fig_3, file_path='fig', file_name=f'meanline_model_generated_distribution_2', overwrite=True, dpi = 500)
+    save_fig_custom(fig_4, file_path='fig', file_name=f'training_data_distribution', overwrite=True, dpi = 500)
 
 
 

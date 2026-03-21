@@ -387,7 +387,7 @@ def validation_1D(device, sample_percent, model, num_steps, manual_seed, multipl
             omega_normalised = df.loc[i, 'omega']
             m_dot_normalised = df.loc[i, 'm_dot']
 
-            number_of_trials = 1
+            number_of_trials = 0
             number_of_unfeasible_designs = 0
             success = False
 
@@ -458,8 +458,8 @@ def validation_1D(device, sample_percent, model, num_steps, manual_seed, multipl
                 number_of_trials += 1
 
 
-                pr_error = abs(pr - pr_original) / (pr_original)
-                eta_error = abs(eta - eta_original) / (eta_original)
+                pr_error = 100*abs(pr - pr_original) / (pr_original)
+                eta_error = 100*abs(eta - eta_original) / (eta_original)
                 
                 pr_error_list.append(pr_error)
                 eta_error_list.append(eta_error)

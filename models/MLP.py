@@ -83,7 +83,8 @@ class CFGResNet(torch.nn.Module):
                 cond_drop_prob  = 0.0,      # Probability of using null emb
                 adaptive_scale  = True,     # Feature-wise transformations, FiLM
                 skip_scale      = 1.0,      # Skip connection scaling
-                affine          = False    # Affine normalization for MLP
+                affine          = False,    # Affine normalization for MLP
+                **kwargs
                 ):
 
         super().__init__()

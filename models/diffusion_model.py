@@ -644,9 +644,9 @@ if __name__ == '__main__':
     print(len(train_set), len(val_set), len(test_set))
 
     # Save the dataset division indices
-    np.save("dataset/1D_train_indices.npy", train_indices)
-    np.save("dataset/1D_val_indices.npy", val_indices)
-    np.save("dataset/1D_test_indices.npy", test_indices)
+    # np.save("dataset/1D_train_indices.npy", train_indices)
+    # np.save("dataset/1D_val_indices.npy", val_indices)
+    # np.save("dataset/1D_test_indices.npy", test_indices)
 
 
     Training = True
