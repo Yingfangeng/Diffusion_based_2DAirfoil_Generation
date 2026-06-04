@@ -388,8 +388,8 @@ if __name__ == '__main__':
     nn_structure=model_config['neural_network_sturcture']
     reduced_data_fraction=model_config['reduced_data_fraction']
     # condition = model_config['condition']
-    model_code = f"./mdl_weight/{data_structure}_{nn_structure}_{model_channel}_{model_layer}_{len(model_channel_multiplication)}_with_{num_epochs}_epochs_{reduced_data_fraction}_data_resume"
-    save_path = f"{model_code}_debug.pth"
+    model_code = f"./mdl_weight/{data_structure}_{nn_structure}_{model_channel}_{model_layer}_{len(model_channel_multiplication)}_with_{num_epochs}_epochs_{reduced_data_fraction}_data"
+    save_path = f"{model_code}.pth"
     check_point_path = f"{model_code}_check_point.pth"
     print(f'The model weight will be saved to path {save_path}')
     print(f'This training uses {int(reduced_data_fraction*100)}% of the entire dataset')
@@ -456,7 +456,7 @@ if __name__ == '__main__':
         num_components = int(model_config['component_number'])
 
         R_tip_1 = df['R_tip_1'].to_numpy()
-        R_mean_1 = df['R_mean_1'].to_numpy()
+        # R_mean_1 = df['R_mean_1'].to_numpy()
         R_hub_1 = df['R_hub_1'].to_numpy()
         beta_b1_hub = df['beta_b1_hub'].to_numpy()
         beta_b1_tip = df['beta_b1_tip'].to_numpy()
@@ -465,12 +465,13 @@ if __name__ == '__main__':
         R_mean_2 = df['R_mean_2'].to_numpy()
         b_2 = df['b_2'].to_numpy()
         L_z = df['L_z'].to_numpy()
+        s = df['s'].to_numpy()
         t = df['t'].to_numpy()
         nblades = df['nblades'].to_numpy()
-        n_splitter_blades = df['n_splitter_blades'].to_numpy()
+        # n_splitter_blades = df['n_splitter_blades'].to_numpy()
         b3 = df['b3'].to_numpy()
         r3 = df['r3'].to_numpy()
-        slip_factor = df['slip_factor'].to_numpy()
+        # slip_factor = df['slip_factor'].to_numpy()
 
         m_dot = df['m_dot'].to_numpy()
         omega = df['omega'].to_numpy()
@@ -491,8 +492,8 @@ if __name__ == '__main__':
 
 
             if not file_exist:
-                coordinates.append([R_tip_1[i], R_mean_1[i], R_hub_1[i], beta_b1_hub[i], beta_b1_tip[i], beta_b1_mean[i], 
-                                beta_b2[i], R_mean_2[i], b_2[i], L_z[i],  t[i], nblades[i], n_splitter_blades[i], b3[i], r3[i], slip_factor[i]])
+                coordinates.append([R_tip_1[i], R_hub_1[i], beta_b1_hub[i], beta_b1_tip[i], beta_b1_mean[i], 
+                                beta_b2[i], R_mean_2[i], b_2[i], L_z[i], s[i] ,t[i], nblades[i], b3[i], r3[i]])
                 cond_data.append([m_dot[i], omega[i], pressure_ratio[i], efficiency[i]])
 
         cond_size = len(cond_data[0])
@@ -522,7 +523,7 @@ if __name__ == '__main__':
 
             if len(row_2) == 1:
             
-                coordinates.append([row_2['x_min'].item(), row_2['x_max'].item(), row_2['r_min'].item(), row_2['r_max'].item(), row_2['theta_min'].item(), row_2['theta_max'].item(), row['nblades'], row['n_splitter_blades']])
+                coordinates.append([row_2['x_min'].item(), row_2['x_max'].item(), row_2['r_min'].item(), row_2['r_max'].item(), row_2['theta_min'].item(), row_2['theta_max'].item(), row['nblades']])
                 
                 cond_data.append([row['m_dot'], row['omega'], row['pressure_ratio'], row['efficiency']])
         

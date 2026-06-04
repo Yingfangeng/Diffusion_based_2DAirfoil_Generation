@@ -908,7 +908,7 @@ def validation_accuracy(model_config_path, file_name, band = None, mode = None, 
     print(f'{int(100*(CD_in_bound)/(len(CL)))}% samples have {second_variable_name} within {int(band_1*100)}% relative error.')
     print(f'Averaged number of trials {average_design_trials:.2f}, averaged percent of unfeasible designs {total_unfeasible_design_percent:.2f}%.')
 
-    fig, axes = plt.subplots(1,2, figsize=(15,5))
+    fig, axes = plt.subplots(1,2, figsize=(13,5.5))
     
     ax1 = axes[0]
     ax2 = axes[1]
@@ -950,7 +950,7 @@ def validation_accuracy(model_config_path, file_name, band = None, mode = None, 
     # =================================
 
     if mode == 'scatter':
-        ax1.scatter(CL, CL_actual, color = 'b', s=5, label = 'Generated Point')
+        ax1.scatter(CL, CL_actual, color = 'b', s=5, label = 'Generated Design')
     elif mode == 'heatmap':
         ax1.imshow(density.T, origin='lower', extent=[CL_axis_min, CL_axis_max, CL_axis_min, CL_axis_max], cmap='Reds', aspect='auto')
     
@@ -959,13 +959,13 @@ def validation_accuracy(model_config_path, file_name, band = None, mode = None, 
     ax1.plot(np.linspace(CL_axis_lower_limit, CL_axis_upper_limit, 10), np.linspace(CL_axis_lower_limit, CL_axis_upper_limit, 10), c='r', ls='--', label = '100% Accuracy') # line with grad = 1
     # ax1.plot(np.linspace(CL_axis_lower_limit, CL_axis_upper_limit, 10), upper_band_grad*np.linspace(CL_axis_lower_limit, CL_axis_upper_limit, 10), c='r', ls=':', label = f'{int(band_1*100)}% band') # upperbound of 10% error
     # ax1.plot(np.linspace(CL_axis_lower_limit, CL_axis_upper_limit, 10), lower_band_grad*np.linspace(CL_axis_lower_limit, CL_axis_upper_limit, 10), c='r', ls=':') # lowerbound of 10% error
-    ax1.set_xlabel(f'Target {first_variable_name_latex}', fontsize = 14)
-    ax1.set_ylabel(f'Generated {first_variable_name_latex}', fontsize = 14)
+    ax1.set_xlabel(f'Target {first_variable_name_latex}', fontsize = 18)
+    ax1.set_ylabel(f'Generated {first_variable_name_latex}', fontsize = 18)
     ax1.set_xlim(CL_axis_lower_limit, CL_axis_upper_limit)
     ax1.set_ylim(CL_axis_lower_limit, CL_axis_upper_limit)
-    ax1.tick_params(axis='both', which='major', labelsize=14)
+    ax1.tick_params(axis='both', which='major', labelsize=16)
     ax1.grid(linestyle = ':')
-    ax1.legend(fontsize = 14)
+    ax1.legend(fontsize = 18)
 #     ax1.text(0.97, 0.03, f'$C_L$ RMSE = {CL_rmse:.4f}',
 #     transform=ax1.transAxes,
 #     fontsize=14,
@@ -975,51 +975,53 @@ def validation_accuracy(model_config_path, file_name, band = None, mode = None, 
 # )
     
 
+    # The distribution plot
+    distribution_plot_on_edge = False
+    if distribution_plot_on_edge == True:
+        pos = ax1.get_position()
+        gap = 0.01
+        top_frac = 0.20
+        right_frac = 0.20
 
-    pos = ax1.get_position()
-    gap = 0.01
-    top_frac = 0.20
-    right_frac = 0.20
+        ax1.set_position([pos.x0, pos.y0, pos.width - pos.width * right_frac - gap, pos.height])
+        pos = ax1.get_position()
+        
+        ax_top = fig.add_axes([pos.x0, pos.y1, pos.width, pos.height * top_frac], sharex=ax1)
+        ax_right = fig.add_axes([pos.x1, pos.y0, pos.width * right_frac, pos.height], sharey=ax1)
+        kde_x = gaussian_kde(CL)
+        x_vals = np.linspace(CL_axis_lower_limit, CL_axis_upper_limit, 200)
+        x_density = kde_x(x_vals)
+        ax_top.plot(x_vals, x_density, color='b')
+        ax_top.fill_between(x_vals, 0, x_density, color='lightblue', alpha=0.6)
 
-    ax1.set_position([pos.x0, pos.y0, pos.width - pos.width * right_frac - gap, pos.height])
-    pos = ax1.get_position()
-    
-    ax_top = fig.add_axes([pos.x0, pos.y1, pos.width, pos.height * top_frac], sharex=ax1)
-    ax_right = fig.add_axes([pos.x1, pos.y0, pos.width * right_frac, pos.height], sharey=ax1)
-    kde_x = gaussian_kde(CL)
-    x_vals = np.linspace(CL_axis_lower_limit, CL_axis_upper_limit, 200)
-    x_density = kde_x(x_vals)
-    ax_top.plot(x_vals, x_density, color='b')
-    ax_top.fill_between(x_vals, 0, x_density, color='lightblue', alpha=0.6)
+        kde_y = gaussian_kde(CL_actual)
+        y_vals = np.linspace(CL_axis_lower_limit, CL_axis_upper_limit, 200)
+        y_density = kde_y(y_vals)
+        ax_right.plot(y_density, y_vals, color='b')
+        ax_right.fill_betweenx(y_vals, 0, y_density, color='lightblue', alpha=0.6)
 
-    kde_y = gaussian_kde(CL_actual)
-    y_vals = np.linspace(CL_axis_lower_limit, CL_axis_upper_limit, 200)
-    y_density = kde_y(y_vals)
-    ax_right.plot(y_density, y_vals, color='b')
-    ax_right.fill_betweenx(y_vals, 0, y_density, color='lightblue', alpha=0.6)
-
-    ax_top.set_xlim(ax1.get_xlim())
-    ax_right.set_ylim(ax1.get_ylim())
-    ax_top.margins(x=0, y=0)
-    ax_right.margins(x=0, y=0)
+        ax_top.set_xlim(ax1.get_xlim())
+        ax_right.set_ylim(ax1.get_ylim())
+        ax_top.margins(x=0, y=0)
+        ax_right.margins(x=0, y=0)
 
 
-    ax_top.set_xlim(ax1.get_xlim())
-    ax_right.set_ylim(ax1.get_ylim())
+        ax_top.set_xlim(ax1.get_xlim())
+        ax_right.set_ylim(ax1.get_ylim())
 
-    ax_top.set_ylim(bottom=0)
-    ax_right.set_xlim(left=0)
+        ax_top.set_ylim(bottom=0)
+        ax_right.set_xlim(left=0)
 
-    ax_top.margins(x=0, y=0)
-    ax_right.margins(x=0, y=0)
+        ax_top.margins(x=0, y=0)
+        ax_right.margins(x=0, y=0)
 
-    for spine in ax_top.spines.values():
-        spine.set_visible(False)
-    for spine in ax_right.spines.values():
-        spine.set_visible(False)
+        for spine in ax_top.spines.values():
+            spine.set_visible(False)
+        for spine in ax_right.spines.values():
+            spine.set_visible(False)
 
-    ax_top.axis('off')
-    ax_right.axis('off')
+        ax_top.axis('off')
+        ax_right.axis('off')
 
 
     # ================================= KDE
@@ -1042,11 +1044,11 @@ def validation_accuracy(model_config_path, file_name, band = None, mode = None, 
     ax2.plot(np.linspace(CD_axis_lower_limit, CD_axis_upper_limit, 10), np.linspace(CD_axis_lower_limit, CD_axis_upper_limit, 10), c='r', ls='--') # line with grad = 1
     # ax2.plot(np.linspace(CD_axis_lower_limit, CD_axis_upper_limit, 10), upper_band_grad*np.linspace(CD_axis_lower_limit, CD_axis_upper_limit, 10), c='r', ls=':') # upperbound of 10% error
     # ax2.plot(np.linspace(CD_axis_lower_limit, CD_axis_upper_limit, 10), lower_band_grad*np.linspace(CD_axis_lower_limit, CD_axis_upper_limit, 10), c='r', ls=':') # lowerbound of 10% error
-    ax2.set_xlabel(f'Target {second_variable_name_latex}', fontsize = 14)
-    ax2.set_ylabel(f'Generated {second_variable_name_latex}', fontsize = 14)
+    ax2.set_xlabel(f'Target {second_variable_name_latex}', fontsize = 18)
+    ax2.set_ylabel(f'Generated {second_variable_name_latex}', fontsize = 18)
     ax2.set_xlim(CD_axis_lower_limit, CD_axis_upper_limit)
     ax2.set_ylim(CD_axis_lower_limit, CD_axis_upper_limit)
-    ax2.tick_params(axis='both', which='major', labelsize=14)
+    ax2.tick_params(axis='both', which='major', labelsize=16)
     ax2.grid(linestyle = ':')
     # ax2.text(0.97, 0.03, f'$C_D$ RMSE = {CD_rmse:.4f}',
     # transform=ax2.transAxes,
@@ -1056,50 +1058,53 @@ def validation_accuracy(model_config_path, file_name, band = None, mode = None, 
     # bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
 
 
-    pos = ax2.get_position()
 
-    gap = 0.01
-    top_frac = 0.20
-    right_frac = 0.20
+    # The distribution plot
+    if distribution_plot_on_edge == True:
+        pos = ax2.get_position()
 
-    ax2.set_position([pos.x0, pos.y0, pos.width - pos.width * right_frac - gap, pos.height])
-    pos = ax2.get_position()
+        gap = 0.01
+        top_frac = 0.20
+        right_frac = 0.20
 
-
-    ax_top = fig.add_axes([pos.x0, pos.y1, pos.width, pos.height * top_frac], sharex=ax2)
-    ax_right = fig.add_axes([pos.x1, pos.y0, pos.width * right_frac, pos.height], sharey=ax2)
-    kde_x = gaussian_kde(CD)
-    x_vals = np.linspace(CD_axis_lower_limit, CD_axis_upper_limit, 200)
-    x_density = kde_x(x_vals)
-    ax_top.plot(x_vals, x_density, color='b')
-    ax_top.fill_between(x_vals, 0, x_density, color='lightblue', alpha=0.6)
-
-    kde_y = gaussian_kde(CD_actual)
-    y_vals = np.linspace(CD_axis_lower_limit, CD_axis_upper_limit, 200)
-    y_density = kde_y(y_vals)
-    ax_right.plot(y_density, y_vals, color='b')
-    ax_right.fill_betweenx(y_vals, 0, y_density, color='lightblue', alpha=0.6)
-
-    ax_top.set_xlim(ax2.get_xlim())
-    ax_right.set_ylim(ax2.get_ylim())
-    ax_top.margins(x=0, y=0)
-    ax_right.margins(x=0, y=0)
+        ax2.set_position([pos.x0, pos.y0, pos.width - pos.width * right_frac - gap, pos.height])
+        pos = ax2.get_position()
 
 
+        ax_top = fig.add_axes([pos.x0, pos.y1, pos.width, pos.height * top_frac], sharex=ax2)
+        ax_right = fig.add_axes([pos.x1, pos.y0, pos.width * right_frac, pos.height], sharey=ax2)
+        kde_x = gaussian_kde(CD)
+        x_vals = np.linspace(CD_axis_lower_limit, CD_axis_upper_limit, 200)
+        x_density = kde_x(x_vals)
+        ax_top.plot(x_vals, x_density, color='b')
+        ax_top.fill_between(x_vals, 0, x_density, color='lightblue', alpha=0.6)
 
-    ax_top.set_ylim(bottom=0)
-    ax_right.set_xlim(left=0)
+        kde_y = gaussian_kde(CD_actual)
+        y_vals = np.linspace(CD_axis_lower_limit, CD_axis_upper_limit, 200)
+        y_density = kde_y(y_vals)
+        ax_right.plot(y_density, y_vals, color='b')
+        ax_right.fill_betweenx(y_vals, 0, y_density, color='lightblue', alpha=0.6)
 
-    ax_top.margins(x=0, y=0)
-    ax_right.margins(x=0, y=0)
+        ax_top.set_xlim(ax2.get_xlim())
+        ax_right.set_ylim(ax2.get_ylim())
+        ax_top.margins(x=0, y=0)
+        ax_right.margins(x=0, y=0)
 
-    for spine in ax_top.spines.values():
-        spine.set_visible(False)
-    for spine in ax_right.spines.values():
-        spine.set_visible(False)
 
-    ax_top.axis('off')
-    ax_right.axis('off')
+
+        ax_top.set_ylim(bottom=0)
+        ax_right.set_xlim(left=0)
+
+        ax_top.margins(x=0, y=0)
+        ax_right.margins(x=0, y=0)
+
+        for spine in ax_top.spines.values():
+            spine.set_visible(False)
+        for spine in ax_right.spines.values():
+            spine.set_visible(False)
+
+        ax_top.axis('off')
+        ax_right.axis('off')
 
 
 

@@ -206,13 +206,13 @@ def model_validation(model, model_code, data_structure, device, sample_percent, 
         unfeasible_design_count = 0
         max_iteration_count = max_iteration
         iteration_count  = 0
-        next = 0
+        valid_design = 0
         CL_error_list = []
         CD_error_list = []
         CL_actual_list_2 = []
         CD_actual_list_2 = []
     
-        while iteration_count < max_iteration_count and next == 0:
+        while iteration_count < max_iteration_count: # and valid_design == 0:
             
             if data_structure != 'sdf':
                 rnd = StackedRandomGenerator(device, range(sample_size))
@@ -250,7 +250,7 @@ def model_validation(model, model_code, data_structure, device, sample_percent, 
                 ys = np.linspace(y_lower_lim, y_upper_lim, y_resolution)
 
                 sdf= (sample_img + 1)*(sdf_max - sdf_min)/2 + sdf_min
-                # sdf_denormalised = sample_img
+               
 
                 fig = plt.figure()
                 ax0 = fig.add_subplot(111)
@@ -264,13 +264,14 @@ def model_validation(model, model_code, data_structure, device, sample_percent, 
             
             # xfoil to calculate the data for the genrated design
             CL_actual, CD_actual = xfoil_calculation(x_coords, y_coords, AOA, Re, Ma, CL, CD, x_foil_timeout)
-            CL_error = abs((CL_actual - CL)/CL)
-            CD_error = abs((CD_actual - CD)/CD)
+            CL_error = 100*abs((CL_actual - CL)/CL)
+            CD_error = 100*abs((CD_actual - CD)/CD)
             
             if CL_error <= CL_tolerence and CD_error <= CD_tolerence:
+
                 CL_output = CL_actual
                 CD_output = CD_actual
-                next = 1
+                valid_design += 1
 
 
             else:
@@ -282,27 +283,28 @@ def model_validation(model, model_code, data_structure, device, sample_percent, 
             if CL_actual == 999:
                 unfeasible_design_count = unfeasible_design_count + 1
 
+            if valid_design == 1:
+                average_trial = iteration_count
+
+
+            if iteration_count == max_iteration_count and valid_design == 0:
+                index = CL_error_list.index(min(CL_error_list))
+                CL_output = CL_actual_list_2[index]
+                CD_output = CD_actual_list_2[index]
+
+
+                print(f'Max {max_iteration_count} design iteration reached for NO.{design+1} design.\n'
+                        f'Using the best matching result with CL {CL_actual_list_2[index]} with error {CL_error_list[index]}, CD {CD_actual_list_2[index]} with error {CD_error_list[index]}.')
+
+        # else:
+            # print(f'The NO.{design+1} valid design took {iteration_count} design iteration(s)\n'
+            #     f'The design has CL {CL_actual} ({100*CL_error}%) and CD {CD_actual} ({100*CD_error}%).')
+            # print(f'The NO.{design+1} design case resulted in {valid_design} valid designs iteration(s)')
+
             iteration_count = iteration_count + 1
         
-            
-
-        if iteration_count == max_iteration_count and next == 0:
-            index = CL_error_list.index(min(CL_error_list))
-            CL_output = CL_actual_list_2[index]
-            CD_output = CD_actual_list_2[index]
-
-
-            print(f'Max {max_iteration_count} design iteration reached for NO.{design+1} design.\n'
-                    f'Using the best matching result with CL {CL_actual_list_2[index]} with error {CL_error_list[index]}, CD {CD_actual_list_2[index]} with error {CD_error_list[index]}.')
-
-        else:
-            print(f'The NO.{design+1} valid design took {iteration_count} design iteration(s)\n'
-                f'The design has CL {CL_actual} ({100*CL_error}%) and CD {CD_actual} ({100*CD_error}%).')
-
-        
-        
        
-        new_row = {"name": name, "Re": Re, "AOA": AOA, "CL": CL, "CD": CD, "CL_actual": CL_output, "CD_actual": CD_output, "design_iteration": iteration_count, "unfeasible_design": unfeasible_design_count}
+        new_row = {"name": name, "Re": Re, "AOA": AOA, "CL": CL, "CD": CD, "CL_actual": CL_output, "CD_actual": CD_output, "design_iteration": average_trial, "unfeasible_design": unfeasible_design_count, "valid_design": valid_design}
         results_df = pd.concat([results_df, pd.DataFrame([new_row])], ignore_index=True)
         print(f"{name} done.")
         design = design +1
@@ -409,8 +411,8 @@ def validation_1D(device, sample_percent, model, num_steps, manual_seed, multipl
                 samples = samples.float()
                 sample = samples[0].cpu().numpy()
 
-                geom_cols = ['R_tip_1', 'R_mean_1', 'R_hub_1', 'beta_b1_hub', 'beta_b1_tip', 'beta_b1_mean', 
-                            'beta_b2', 'R_mean_2', 'b_2', 'L_z',  't', 'nblades', 'n_splitter_blades', 'b3', 'r3', 'slip_factor']
+                geom_cols = ['R_tip_1', 'R_hub_1', 'beta_b1_hub', 'beta_b1_tip', 'beta_b1_mean', 
+                            'beta_b2', 'R_mean_2', 'b_2', 'L_z', 's', 't', 'nblades',  'b3', 'r3']
 
 
                 mins = min_max.loc[geom_cols, "min"].to_numpy(dtype=np.float32)
@@ -419,30 +421,42 @@ def validation_1D(device, sample_percent, model, num_steps, manual_seed, multipl
 
                 denormalised_geometry = sample * (maxs + 0.0000000000000001 - mins) + mins
 
+
+                r_tip_1 = float(denormalised_geometry[0])
+                
+                r_hub_1 = float(denormalised_geometry[1])
+                beta_b2 = float(denormalised_geometry[5])
+                nblades = round(denormalised_geometry[11])
+
+
+                r_mean_1 = (2/3) * (((r_tip_1**3) - (r_hub_1**3)) / ((r_tip_1**2) - (r_hub_1**2)))
+                slip_factor = 1 - (((np.cos(beta_b2))**0.5) / (nblades**0.7))
+
+
                 geometry  = {
                     'imp_type': 'Centrifugal', 
                     'P_01': 101325, 
                     'T_01': 288,
-                    'R_tip_1': float(denormalised_geometry[0]), 
-                    'R_mean_1': float(denormalised_geometry[1]), 
-                    'R_hub_1': float(denormalised_geometry[2]),
+                    'R_tip_1': r_tip_1, 
+                    'R_mean_1': r_mean_1, 
+                    'R_hub_1': r_hub_1,
                     'alpha_1': 0, 
-                    'beta_b1_hub': float(denormalised_geometry[3]), 
-                    'beta_b1_tip': float(denormalised_geometry[4]),
-                    'beta_b1_mean': float(denormalised_geometry[5]),
+                    'beta_b1_hub': float(denormalised_geometry[2]), 
+                    'beta_b1_tip': float(denormalised_geometry[3]),
+                    'beta_b1_mean': float(denormalised_geometry[4]),
                     'lambda_1': 1.0,
-                    'beta_b2': float(denormalised_geometry[6]),
-                    'R_mean_2': float(denormalised_geometry[7]), 
+                    'beta_b2': float(denormalised_geometry[5]),
+                    'R_mean_2': float(denormalised_geometry[6]), 
                     'lambda_2': 1.0, 
-                    'b_2': float(denormalised_geometry[8]), 
-                    'L_z': float(denormalised_geometry[9]), 
+                    'b_2': float(denormalised_geometry[7]), 
+                    'L_z': float(denormalised_geometry[8]), 
+                    's': float(denormalised_geometry[9]),
                     't': float(denormalised_geometry[10]), 
-                    's': 0.0003,
                     'nblades': round(denormalised_geometry[11]),
-                    'n_splitter_blades': round(denormalised_geometry[12]),
-                    'b3': float(denormalised_geometry[13]), 
-                    'r3': float(denormalised_geometry[14]),
-                    'slip_factor': float(denormalised_geometry[15])}
+                    'n_splitter_blades': 0,
+                    'b3': float(denormalised_geometry[12]), 
+                    'r3': float(denormalised_geometry[13]),
+                    'slip_factor': slip_factor}
 
 
                 m_dot = m_dot_normalised*(min_max.loc['m_dot', 'max'] - min_max.loc['m_dot', 'min']) + min_max.loc['m_dot', 'min']
@@ -883,12 +897,6 @@ def validation_3D(device, sample_percent, model, aux_model, num_steps, manual_se
 
                 while not success and number_of_trials < max_iteration:
 
-
-                        
-
-
-
-                        
                     # The first model, input 4 output 8
                     cond = (torch.tensor([m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised]).to(device))
                     # print(m_dot_normalised, omega_normalised,  pr_normalised, eta_normalised)
@@ -906,7 +914,7 @@ def validation_3D(device, sample_percent, model, aux_model, num_steps, manual_se
                     theta_min = sample[4]
                     theta_max = sample[5]
                     n_blades = sample[6]
-                    n_splitter =  sample[7]
+                    n_splitter =  0
 
                     
                     # The main model
@@ -1228,5 +1236,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     config_file_main = args.main_model_config
     config_file_aux = args.aux_model_config
-    model_deployment(config_file_main, sample_percent = 0.1, aux_model_config_path=config_file_aux, num_steps = 100,  manual_seed = 123,
+    model_deployment(config_file_main, sample_percent = 0.1, aux_model_config_path=config_file_aux, num_steps = 30,  manual_seed = 123,
                      x_foil_timeout=5, CL_tolerence = 1, CD_tolerence = 1, max_iteration = 100, mode = 'trivial')

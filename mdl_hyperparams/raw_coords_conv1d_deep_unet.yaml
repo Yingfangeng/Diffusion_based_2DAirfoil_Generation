@@ -13,3 +13,4 @@ rescaled_phi: 0  # Mixing ratio of the std_function
 device: 'cuda'
 component_number: 512
 restart: False
+reduced_data_fraction: 1

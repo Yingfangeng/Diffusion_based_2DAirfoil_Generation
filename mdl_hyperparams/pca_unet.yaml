@@ -9,6 +9,7 @@ model_layer: 5      # number of layers under the same dimension
 model_channel_multiplication: [1,2,4,8] # dimension multiplication factor
 train_val_division: 0.8 # training set percent
 cond_scale: 1    # CFG guidance scale
+reduced_data_fraction: 1
 rescaled_phi: 0  # Mixing ratio of the std_function
 device: 'cuda'
 component_number: 32

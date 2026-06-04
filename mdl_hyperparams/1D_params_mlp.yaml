@@ -11,6 +11,6 @@ train_val_division: 0.8 # training set percent
 cond_scale: 1    # CFG guidance scale
 rescaled_phi: 0  # Mixing ratio of the std_function
 device: 'cuda'
-component_number: 16
+component_number: 14
 restart: False
 reduced_data_fraction: 1
