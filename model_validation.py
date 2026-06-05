@@ -202,11 +202,11 @@ def model_validation(model, model_code, data_structure, device, sample_percent, 
 
 
     
-        iteration_count = 0
         unfeasible_design_count = 0
         max_iteration_count = max_iteration
         iteration_count  = 0
         valid_design = 0
+        average_trial = 0
         CL_error_list = []
         CD_error_list = []
         CL_actual_list_2 = []
@@ -272,6 +272,7 @@ def model_validation(model, model_code, data_structure, device, sample_percent, 
                 CL_output = CL_actual
                 CD_output = CD_actual
                 valid_design += 1
+                print('Found valid design')
 
 
             else:
@@ -286,7 +287,8 @@ def model_validation(model, model_code, data_structure, device, sample_percent, 
             if valid_design == 1:
                 average_trial = iteration_count
 
-
+            iteration_count = iteration_count + 1
+            
             if iteration_count == max_iteration_count and valid_design == 0:
                 index = CL_error_list.index(min(CL_error_list))
                 CL_output = CL_actual_list_2[index]
@@ -301,7 +303,7 @@ def model_validation(model, model_code, data_structure, device, sample_percent, 
             #     f'The design has CL {CL_actual} ({100*CL_error}%) and CD {CD_actual} ({100*CD_error}%).')
             # print(f'The NO.{design+1} design case resulted in {valid_design} valid designs iteration(s)')
 
-            iteration_count = iteration_count + 1
+            
         
        
         new_row = {"name": name, "Re": Re, "AOA": AOA, "CL": CL, "CD": CD, "CL_actual": CL_output, "CD_actual": CD_output, "design_iteration": average_trial, "unfeasible_design": unfeasible_design_count, "valid_design": valid_design}
@@ -1236,5 +1238,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     config_file_main = args.main_model_config
     config_file_aux = args.aux_model_config
-    model_deployment(config_file_main, sample_percent = 0.1, aux_model_config_path=config_file_aux, num_steps = 30,  manual_seed = 123,
-                     x_foil_timeout=5, CL_tolerence = 1, CD_tolerence = 1, max_iteration = 100, mode = 'trivial')
+    model_deployment(config_file_main, sample_percent = 0.01, aux_model_config_path=config_file_aux, num_steps = 30,  manual_seed = 123,
+                     x_foil_timeout=5, CL_tolerence = 1, CD_tolerence = 5, max_iteration = 100, mode = 'trivial')

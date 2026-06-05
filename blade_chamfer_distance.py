@@ -145,7 +145,7 @@ def distribution_compare():
     physical_distribution_file_selected_2 = physical_distribution_files[250:350]
     # print(f'There are {len(physical_distribution_file_selected_1)} physical generated profiles.')
 
-    model_generated_distribution_3D_path = "generated_compressor_3D_geometry/model_generated_distribution_3D"
+    model_generated_distribution_3D_path = "generated_compressor_3D_geometry/3D_model_generated_new"
     model_generated_distribution_3D_files = sorted(os.listdir(model_generated_distribution_3D_path))
     # print(f'There are {len(model_generated_distribution_3D_files)} 3D model generated profiles.')
 
@@ -171,7 +171,7 @@ def distribution_compare():
 
 
     for file in model_generated_distribution_3D_files:
-        profiles, _ = load_blade_curve(f'generated_compressor_3D_geometry/model_generated_distribution_3D/{file}/Main_blade.curve')
+        profiles, _ = load_blade_curve(f'generated_compressor_3D_geometry/3D_model_generated_new/{file}/Main_blade.curve')
         model_generated_distribution_3D.append(np.concatenate(profiles, axis=0).astype(np.float64))
 
     for file in model_generated_distribution_1D_files:
@@ -183,15 +183,15 @@ def distribution_compare():
 
     
     physical_distribution_density = kernel_density_estimate_3D(physical_distribution_1)
-    physical_distribution_density_2 = kernel_density_estimate_3D(physical_distribution_2)
+    # physical_distribution_density_2 = kernel_density_estimate_3D(physical_distribution_2)
     model_generated_distribution_density_3D = kernel_density_estimate_3D(model_generated_distribution_3D)
-    model_generated_distribution_density_1D = kernel_density_estimate_3D(model_generated_distribution_1D)
+    # model_generated_distribution_density_1D = kernel_density_estimate_3D(model_generated_distribution_1D)
     difference = kde_distribution_difference(physical_distribution_density, model_generated_distribution_density_3D)
     print('3D and physical', difference)
-    difference = kde_distribution_difference(physical_distribution_density, model_generated_distribution_density_1D)
-    print('1D and physical', difference)
-    difference = kde_distribution_difference(physical_distribution_density, physical_distribution_density_2)
-    print('two physical', difference)
+    # difference = kde_distribution_difference(physical_distribution_density, model_generated_distribution_density_1D)
+    # print('1D and physical', difference)
+    # difference = kde_distribution_difference(physical_distribution_density, physical_distribution_density_2)
+    # print('two physical', difference)
 
     # final_distance_1 = compute_chamfer_distance_and_ssim(model_generated_distribution_3D, physical_distribution_1)
     # final_distance_2 = compute_chamfer_distance_and_ssim(physical_distribution_1, model_generated_distribution_3D)

@@ -250,7 +250,12 @@ class Conv2DResNetUNetCFG(nn.Module):
         
         
         # reshape the tensor back to the original form
-        x = x.permute(0, 2, 3, 1).reshape(B, 1, self.w, self.h*3)
+        
+        if self.data_structure == 'sdf':
+            x = x.permute(0, 2, 3, 1).reshape(B, 1, self.w, self.h*1)
+        elif self.data_structure == '3D_coordinates':
+            x = x.permute(0, 2, 3, 1).reshape(B, 1, self.w, self.h*3)
+
 
         return x
 

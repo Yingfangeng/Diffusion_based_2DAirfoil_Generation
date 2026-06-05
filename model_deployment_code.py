@@ -908,7 +908,7 @@ def validation_accuracy(model_config_path, file_name, band = None, mode = None, 
     print(f'{int(100*(CD_in_bound)/(len(CL)))}% samples have {second_variable_name} within {int(band_1*100)}% relative error.')
     print(f'Averaged number of trials {average_design_trials:.2f}, averaged percent of unfeasible designs {total_unfeasible_design_percent:.2f}%.')
 
-    fig, axes = plt.subplots(1,2, figsize=(13,5.5))
+    fig, axes = plt.subplots(1,2, figsize=(17,5.5))
     
     ax1 = axes[0]
     ax2 = axes[1]
@@ -976,7 +976,7 @@ def validation_accuracy(model_config_path, file_name, band = None, mode = None, 
     
 
     # The distribution plot
-    distribution_plot_on_edge = False
+    distribution_plot_on_edge = True
     if distribution_plot_on_edge == True:
         pos = ax1.get_position()
         gap = 0.01
@@ -1753,8 +1753,8 @@ def validation_1D(mode, device, sample_number, model, num_steps, manual_seed, mu
                 samples = samples.float()
                 sample = samples[0].cpu().numpy()
 
-                geom_cols = ['R_tip_1', 'R_mean_1', 'R_hub_1', 'beta_b1_hub', 'beta_b1_tip', 'beta_b1_mean', 
-                            'beta_b2', 'R_mean_2', 'b_2', 'L_z',  't', 'nblades', 'n_splitter_blades', 'b3', 'r3', 'slip_factor']
+                geom_cols = ['R_tip_1', 'R_hub_1', 'beta_b1_hub', 'beta_b1_tip', 'beta_b1_mean', 
+                            'beta_b2', 'R_mean_2', 'b_2', 'L_z', 's', 't', 'nblades',  'b3', 'r3']
 
                 deviation =  0.0000000000000001
 
@@ -1773,30 +1773,41 @@ def validation_1D(mode, device, sample_number, model, num_steps, manual_seed, mu
                     splitter_blades = 0
 
 
+                r_tip_1 = float(denormalised_geometry[0])
+                
+                r_hub_1 = float(denormalised_geometry[1])
+                beta_b2 = float(denormalised_geometry[5])
+                nblades = round(denormalised_geometry[11])
+
+
+                r_mean_1 = (2/3) * (((r_tip_1**3) - (r_hub_1**3)) / ((r_tip_1**2) - (r_hub_1**2)))
+                slip_factor = 1 - (((np.cos(beta_b2))**0.5) / (nblades**0.7))
+
+
                 geometry  = {
                     'imp_type': 'Centrifugal', 
                     'P_01': 101325, 
                     'T_01': 288,
-                    'R_tip_1': float(denormalised_geometry[0]), 
-                    'R_mean_1': float(denormalised_geometry[1]), 
-                    'R_hub_1': float(denormalised_geometry[2]),
+                    'R_tip_1': r_tip_1, 
+                    'R_mean_1': r_mean_1, 
+                    'R_hub_1': r_hub_1,
                     'alpha_1': 0, 
-                    'beta_b1_hub': float(denormalised_geometry[3]), 
-                    'beta_b1_tip': float(denormalised_geometry[4]),
-                    'beta_b1_mean': float(denormalised_geometry[5]),
+                    'beta_b1_hub': float(denormalised_geometry[2]), 
+                    'beta_b1_tip': float(denormalised_geometry[3]),
+                    'beta_b1_mean': float(denormalised_geometry[4]),
                     'lambda_1': 1.0,
-                    'beta_b2': float(denormalised_geometry[6]),
-                    'R_mean_2': float(denormalised_geometry[7]), 
+                    'beta_b2': float(denormalised_geometry[5]),
+                    'R_mean_2': float(denormalised_geometry[6]), 
                     'lambda_2': 1.0, 
-                    'b_2': float(denormalised_geometry[8]), 
-                    'L_z': float(denormalised_geometry[9]), 
+                    'b_2': float(denormalised_geometry[7]), 
+                    'L_z': float(denormalised_geometry[8]), 
+                    's': float(denormalised_geometry[9]),
                     't': float(denormalised_geometry[10]), 
-                    's': 0.0003,
-                    'nblades': number_of_blades,
-                    'n_splitter_blades': splitter_blades, # ensure equal number of main and splitter blades
-                    'b3': float(denormalised_geometry[13]), 
-                    'r3': float(denormalised_geometry[14]),
-                    'slip_factor': float(denormalised_geometry[15])}
+                    'nblades': round(denormalised_geometry[11]),
+                    'n_splitter_blades': 0,
+                    'b3': float(denormalised_geometry[12]), 
+                    'r3': float(denormalised_geometry[13]),
+                    'slip_factor': slip_factor}
 
                 m_dot = m_dot_normalised*(min_max.loc['m_dot', 'max'] + deviation - min_max.loc['m_dot', 'min']) + min_max.loc['m_dot', 'min']
                 omega = omega_normalised*(min_max.loc['omega', 'max'] + deviation - min_max.loc['omega', 'min']) + min_max.loc['omega', 'min']
@@ -2457,7 +2468,7 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                 theta_min = sample[4]
                 theta_max = sample[5]
                 n_blades = sample[6]
-                n_splitter =  sample[7]
+                n_splitter =  0
 
                 
                 # The main model
