@@ -117,7 +117,7 @@ def xfoil_calculation(x,y,AOA,Re,Ma,CL,CD, x_foil_timeout=5):
             print('There is no output from xfoil. Possibly because the profile generated is not feasible.')
             CL_actual = 999
             CD_actual = 999
-    except FileNotFoundError:
+    except FileNotFoundError or ValueError:
         CL_actual = 999
         CD_actual = 999
     return CL_actual, CD_actual
@@ -1239,4 +1239,4 @@ if __name__ == "__main__":
     config_file_main = args.main_model_config
     config_file_aux = args.aux_model_config
     model_deployment(config_file_main, sample_percent = 0.01, aux_model_config_path=config_file_aux, num_steps = 30,  manual_seed = 123,
-                     x_foil_timeout=5, CL_tolerence = 1, CD_tolerence = 5, max_iteration = 100, mode = 'trivial')
+                     x_foil_timeout=5, CL_tolerence = 1, CD_tolerence = 5, max_iteration = 100, mode = 'intermediate')
