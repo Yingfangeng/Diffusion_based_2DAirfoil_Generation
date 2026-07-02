@@ -26,6 +26,7 @@ import logging
 from torchmetrics.functional.image.ssim import structural_similarity_index_measure
 import ot
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+import pyvista as pv
 
 from models.diffusion_model import EDM_CFG, edm_sampler, StackedRandomGenerator
 from meanline.impeller import Blade_Forming_3D
@@ -1659,7 +1660,7 @@ def off_design_plot_1D(multi_design_geometry, m_dot_design_point, omega, pr_desi
         pr_list = []
         eta_list = []
         m_dot_list_2 = [] # to ensure same length as pr and eta lists
-        m_dot_list = np.linspace(0.07, 0.12, 20)
+        m_dot_list = np.linspace(0.07, 0.16, 20)
 
 
         for m_dot in m_dot_list:
@@ -1675,7 +1676,7 @@ def off_design_plot_1D(multi_design_geometry, m_dot_design_point, omega, pr_desi
         ax.plot(m_dot_list_2, pr_list, color = color, zorder = 1)
         ax.set_xlabel('Mass Flow Rate (kg/s)', fontsize = 14)
         ax.set_ylabel('Pressure Ratio', fontsize = 14)
-        ax.set_xlim(0.07, 0.12)
+        ax.set_xlim(0.07, 0.16)
         ax.set_ylim(1,4.5)
         ax.tick_params(axis='both', which='major', labelsize=14)
         ax.grid(True, ls = ':')
@@ -1686,7 +1687,7 @@ def off_design_plot_1D(multi_design_geometry, m_dot_design_point, omega, pr_desi
         ax2.plot(m_dot_list_2, eta_list, color = color, zorder = 1)
         ax2.set_xlabel('Mass Flow Rate (kg/s)', fontsize = 14)
         ax2.set_ylabel('Total Efficiency', fontsize = 14)
-        ax2.set_xlim(0.07, 0.12)
+        ax2.set_xlim(0.07, 0.16)
         ax2.set_ylim(0.7, 0.9)
         ax2.tick_params(axis='both', which='major', labelsize=14)
         ax2.grid(True, ls = ':')
@@ -2671,6 +2672,7 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
         save_fig_custom(fig, file_path='fig', file_name=f'Meridional_view_{m_dot:.2f}_{int(RPM)}_{pr_original:.2f}_{eta_original:.2f}', overwrite=True, dpi = 500)
         plt.show()
         
+        show_full_annulus(out_path, 9)
 
 
 
@@ -3812,3 +3814,273 @@ def create_shroud_pinching_from_blade(compressor_code, pinching_ratio):
 
 
     create_shroud_curve_file(x_tip, r_tip, compressor_code, r_1_tip, r_2, b_2, vaneless_existence = True, pinching = True, area_ratio = pinching_ratio)
+
+
+
+
+def make_surface_mesh(surface):
+
+    n_i, n_j, _ = surface.shape
+
+    points = surface.reshape(-1, 3)
+
+    faces = []
+
+    for i in range(n_i - 1):
+        for j in range(n_j - 1):
+            p0 = i * n_j + j
+            p1 = i * n_j + j + 1
+            p2 = (i + 1) * n_j + j + 1
+            p3 = (i + 1) * n_j + j
+
+            faces.append([4, p0, p1, p2, p3])
+
+    faces = np.array(faces).ravel()
+
+    mesh = pv.PolyData(points, faces)
+
+    return mesh
+
+
+
+
+def make_profile_cap_mesh(profile, reverse=False):
+    """
+    Create a cap surface from one closed blade profile.
+
+    profile shape:
+        (n_points, 3)
+    """
+
+    profile = np.asarray(profile)
+
+    # Remove duplicated closing point if first and last points are the same
+    if np.linalg.norm(profile[0] - profile[-1]) < 1e-8:
+        profile = profile[:-1]
+
+    n_points = profile.shape[0]
+
+    if reverse:
+        face = [n_points] + list(range(n_points - 1, -1, -1))
+    else:
+        face = [n_points] + list(range(n_points))
+
+    faces = np.array(face)
+
+    mesh = pv.PolyData(profile, faces)
+
+    # Convert the polygon cap into triangles for more robust rendering
+    mesh = mesh.triangulate()
+    mesh = mesh.clean()
+
+    return mesh
+
+
+
+def show_full_annulus(geometry_path, design_number):
+    points = []
+
+    with open(f'{geometry_path}/Hub.curve') as f:
+        for line in f:
+            line = line.replace(",", " ")
+            values = line.split()
+
+            if len(values) == 3:
+                points.append([float(v) for v in values])
+
+
+    with open(f'{geometry_path}/Blade_number.txt', "r") as f:
+        for line in f:
+            line = line.strip()
+
+            if line.startswith("Main Blade"):
+                n_blades = int(line.split(":")[1].strip())
+
+
+    points = np.array(points)
+
+    points = points[points[:, 0] >= 0]
+
+    x = points[:-100, 0]
+    y = points[:-100, 1]
+    z = points[:-100, 2]
+
+    # Radius from the x-axis
+    r = np.sqrt(y**2 + z**2)
+    bore_radius = 4
+    r_bore = np.full_like(r, bore_radius)
+    r_top = np.linspace(bore_radius, r[0], 100)
+    
+
+    # Rotation angles for hub surface
+    theta = np.linspace(0, 2*np.pi, 100)
+
+    # Create revolved hub surface
+    X = np.tile(x[:, None], (1, len(theta)))
+    Y = r[:, None] * np.cos(theta)
+    Z = r[:, None] * np.sin(theta)
+    hub_surface = np.stack([X, Y, Z], axis=2)
+    hub_mesh = make_surface_mesh(hub_surface)
+
+
+    # create revolved bore surface
+    Y_bore = r_bore[:, None] * np.cos(theta)
+    Z_bore = r_bore[:, None] * np.sin(theta)
+    hub_surface_bore = np.stack([X, Y_bore, Z_bore], axis=2)
+    hub_mesh_bore = make_surface_mesh(hub_surface_bore)
+
+
+    # create revolved hub top surface
+    Y_top = r_top[:, None] * np.cos(theta)
+    Z_top = r_top[:, None] * np.sin(theta)
+    x_top = np.full_like(Z_top, 0.0)
+    
+    print(np.shape(Z_top), np.shape(Y_top), np.shape(x_top))
+    hub_surface_top = np.stack([x_top, Y_top, Z_top], axis=2)
+    hub_mesh_top = make_surface_mesh(hub_surface_top)
+
+
+    # Load main blade
+    main_blade_profiles, _ = load_blade_curve(f'{geometry_path}/Main_blade.curve')
+
+    # Convert blade profiles into one structured blade surface
+    # Expected shape: (n_profiles, n_points_per_profile, 3)
+    blade_surface = np.array(main_blade_profiles)
+
+    blade_tip_surface = blade_surface[-1]
+    blade_hub_surface = blade_surface[0]
+    
+
+    # Create PyVista plotter
+    plotter = pv.Plotter()
+
+    # Add hub
+    plotter.add_mesh(
+        hub_mesh,
+        color='lightgrey',
+        smooth_shading=True,
+        show_edges=False,
+        opacity=1.0
+    )
+
+
+    plotter.add_mesh(
+        hub_mesh_bore,
+        color='lightgrey',
+        smooth_shading=True,
+        show_edges=False,
+        opacity=1.0
+    )
+
+
+    plotter.add_mesh(
+        hub_mesh_top,
+        color='lightgrey',
+        smooth_shading=True,
+        show_edges=False,
+        opacity=1.0
+    )
+
+    # Add blades
+
+    angles = np.linspace(0, 2*np.pi, n_blades, endpoint=False)
+
+    for theta in angles:
+        c = np.cos(theta)
+        s = np.sin(theta)
+
+        blade_rot = blade_surface.copy()
+        y = blade_surface[:, :, 1]
+        z = blade_surface[:, :, 2]
+
+        # Rotate around x-axis
+        blade_rot[:, :, 1] = y * c - z * s
+        blade_rot[:, :, 2] = y * s + z * c
+
+        blade_mesh = make_surface_mesh(blade_rot)
+
+
+
+
+        blade_rot_tip = blade_tip_surface.copy()
+        y = blade_tip_surface[:, 1]
+        z = blade_tip_surface[:, 2]
+
+        # Rotate around x-axis
+        blade_rot_tip[:, 1] = y * c - z * s
+        blade_rot_tip[:, 2] = y * s + z * c
+
+        blade_tip_mesh = make_profile_cap_mesh(blade_rot_tip)
+
+
+        blade_rot_hub = blade_hub_surface.copy()
+        y = blade_hub_surface[:, 1]
+        z = blade_hub_surface[:, 2]
+
+        # Rotate around x-axis
+        blade_rot_hub[:, 1] = y * c - z * s
+        blade_rot_hub[:, 2] = y * s + z * c
+
+        blade_hub_mesh = make_profile_cap_mesh(blade_rot_hub)
+
+
+
+
+
+
+        # Set color map to tab10
+        
+        tab10 = plt.get_cmap('tab10')
+        tab10(0)  # blue
+        tab10(1)  # orange
+        tab10(2)  # green
+        tab10(3)  # red
+        tab10(4)  # purple
+        tab10(5)  # brown
+        tab10(6)  # pink
+        tab10(7)  # grey
+        tab10(8)  # olive
+        tab10(9)  # cyan
+
+
+
+        plotter.add_mesh(
+            blade_mesh,
+            color=tab10(design_number)[:3],
+            smooth_shading=True,
+            show_edges=False,
+            opacity=1.0
+        )
+
+
+        plotter.add_mesh(
+            blade_tip_mesh,
+            color=tab10(design_number)[:3],
+            smooth_shading=True,
+            show_edges=False,
+            opacity=1.0
+        )
+
+        # plotter.add_mesh(
+        #     blade_hub_mesh,
+        #     color=tab10(design_number)[:3],
+        #     smooth_shading=True,
+        #     show_edges=False,
+        #     opacity=1.0
+        # )
+
+    # CAD-like view settings
+    plotter.set_background('white')
+
+   
+    plotter.camera_position = [
+    (-160, 100, 100),
+    (0, 0, 0),
+    (-1, 0, 0)
+]
+    # Show the scene
+    plotter.show(
+    screenshot=f"fig/full_annulus_design_{design_number}.png",
+    window_size=(3000, 3000)
+)
+
