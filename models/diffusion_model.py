@@ -481,7 +481,7 @@ if __name__ == '__main__':
         coordinates = []
         cond_data = []
         
-        df_2 = pd.read_csv('dataset/1D_compressor_geometry_no_splitter_filtered.csv')
+        df_2 = pd.read_csv('dataset/1D_compressor_geometry.csv')
         compressor_index_row = df_2['geometry_index'].to_numpy()
 
         for i in range(len(df)):

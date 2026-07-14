@@ -1892,7 +1892,7 @@ def cyl_to_cart_about_x(x, r, theta):
 
 
 
-def geometry_3D_to_1D_conversion(x,y,z,number_of_blades, splitter_blades, ax_3D):
+def geometry_3D_to_1D_conversion(x,y,z,number_of_blades, splitter_blades, ax_3D = None):
     
 
 
@@ -2081,53 +2081,238 @@ def geometry_3D_to_1D_conversion(x,y,z,number_of_blades, splitter_blades, ax_3D)
 
 
 
-def smoothening_3D(x,y,z, poly, window):
+def fit_polynomial_surface(
+    surface_points,
+    chordwise_order,
+    spanwise_order,
+):
+    """
+    Fit a tensor-product polynomial surface using least squares.
+
+    surface_points shape:
+        (number_of_profiles, number_of_chordwise_points, 3)
+    """
+    n_span, n_chord, _ = surface_points.shape
+
+    u = np.linspace(-1.0, 1.0, n_chord)
+    v = np.linspace(-1.0, 1.0, n_span)
+
+    U, V = np.meshgrid(u, v)
+
+    U = U.ravel()
+    V = V.ravel()
+
+    terms = []
+
+    for i in range(chordwise_order + 1):
+        for j in range(spanwise_order + 1):
+            terms.append(U**i * V**j)
+
+    design_matrix = np.column_stack(terms)
+
+    fitted_surface = np.empty_like(surface_points)
+
+    for coordinate_index in range(3):
+        values = surface_points[
+            :, :, coordinate_index
+        ].ravel()
+
+        coefficients, _, _, _ = np.linalg.lstsq(
+            design_matrix,
+            values,
+            rcond=None,
+        )
+
+        fitted_surface[:, :, coordinate_index] = (
+            design_matrix @ coefficients
+        ).reshape(n_span, n_chord)
+
+    return fitted_surface
+
+
+def smoothstep(number_of_points):
+    """
+    Smooth blending weights from zero to one.
+    """
+    t = np.linspace(0.0, 1.0, number_of_points)
+
+    return 3.0 * t**2 - 2.0 * t**3
+
+
+def smoothening_3D(
+    x,
+    y,
+    z,
+    window, 
+    poly,
+    pressure_order=7,
+    suction_order=7,
+    spanwise_order=3,
+    leading_edge_chordwise_order=4,
+    leading_edge_spanwise_order=2,
+    leading_edge_start=245, #249
+    leading_edge_end=265,   #262
+    overlap=4,
+    points_per_profile=512,
+):
+
+    print(leading_edge_spanwise_order)
+    """
+    Fit separate polynomial surfaces to the pressure side,
+    leading edge and suction side.
+
+    The original flattened x, y and z data structure is preserved.
+    """
+    x = np.asarray(x, dtype=float).ravel()
+    y = np.asarray(y, dtype=float).ravel()
+    z = np.asarray(z, dtype=float).ravel()
+
+    if not (len(x) == len(y) == len(z)):
+        raise ValueError("x, y and z must have equal lengths.")
+
+    if len(x) % points_per_profile != 0:
+        raise ValueError(
+            f"The total number of points must be divisible by "
+            f"{points_per_profile}."
+        )
+
+    number_of_profiles = len(x) // points_per_profile
+
+    points = np.column_stack(
+        (x, y, z)
+    ).reshape(
+        number_of_profiles,
+        points_per_profile,
+        3,
+    )
+
+    # Include overlap points in each adjacent patch.
+    pressure_end = leading_edge_start + overlap
+    suction_start = leading_edge_end - overlap
+
+    pressure_side = points[:, :pressure_end, :]
+
+    leading_edge = points[:,leading_edge_start:leading_edge_end,:]
+
+    suction_side = points[:,suction_start:,:]
+
+    pressure_fit = fit_polynomial_surface(pressure_side,pressure_order,spanwise_order)
+
+    leading_edge_fit = fit_polynomial_surface(leading_edge,leading_edge_chordwise_order,leading_edge_spanwise_order)
+
+    suction_fit = fit_polynomial_surface(suction_side,suction_order,spanwise_order)
+
+    # ----------------------------------------------------------
+    # Pressure-side / leading-edge overlap
+    # ----------------------------------------------------------
+    weights = smoothstep(overlap)
+
+    pressure_overlap = pressure_fit[:,-overlap:,:,]
+
+    leading_edge_pressure_overlap = leading_edge_fit[:,:overlap,:,]
+
+    blended_pressure_overlap = (
+        (1.0 - weights[None, :, None])
+        * pressure_overlap
+        +
+        weights[None, :, None]
+        * leading_edge_pressure_overlap
+    )
+
+    # ----------------------------------------------------------
+    # Leading-edge / suction-side overlap
+    # ----------------------------------------------------------
+    suction_overlap = suction_fit[:,:overlap,:,]
+
+    leading_edge_suction_overlap = leading_edge_fit[:,-overlap:,:,]
+
+    blended_suction_overlap = (
+        (1.0 - weights[None, :, None])
+        * leading_edge_suction_overlap
+        +
+        weights[None, :, None]
+        * suction_overlap
+    )
+
+    # Leading-edge points not included in either overlap.
+    leading_edge_middle = leading_edge_fit[:,overlap:-overlap,:,]
+
+    smoothed_points = np.concatenate(
+        (
+            pressure_fit[:, :-overlap, :],
+            blended_pressure_overlap,
+            leading_edge_middle,
+            blended_suction_overlap,
+            suction_fit[:, overlap:, :],
+        ),
+        axis=1,
+    )
+
+    if smoothed_points.shape != points.shape:
+        raise RuntimeError(
+            f"Output shape {smoothed_points.shape} does not match "
+            f"input shape {points.shape}."
+        )
+
+    return (
+        smoothed_points[:, :, 0].ravel(),
+        smoothed_points[:, :, 1].ravel(),
+        smoothed_points[:, :, 2].ravel(),
+    )
+
+
+
+
+
+
+
+# def smoothening_3D(x,y,z, poly, window):
     
-    x_smooth_list = []
-    y_smooth_list = []
-    z_smooth_list = []
-    window = window      # must be odd; increase for more smoothing
-    poly   = poly       # polynomial order
+#     x_smooth_list = []
+#     y_smooth_list = []
+#     z_smooth_list = []
+#     window = window      # must be odd; increase for more smoothing
+#     poly   = poly       # polynomial order
 
-    points_per_profile = 512
-    number_of_profiles = int(len(x) / points_per_profile)
+#     points_per_profile = 512
+#     number_of_profiles = int(len(x) / points_per_profile)
 
-
-    for profile_idx in range(number_of_profiles):
+#     print('Smoothening enabled!')
+#     for profile_idx in range(number_of_profiles):
         
-        ps_start_index = 0 + 512*profile_idx
-        ps_end_index = 249 + 512*profile_idx
-        ss_start_index = ps_end_index + 13
-        ss_end_index = 512 + 512*profile_idx
+#         ps_start_index = 0 + 512*profile_idx
+#         ps_end_index = 249 + 512*profile_idx
+#         ss_start_index = ps_end_index + 13
+#         ss_end_index = 512 + 512*profile_idx
 
 
-        x_ps_fit = savgol_filter(x[ps_start_index:ps_end_index], window, poly)
-        y_ps_fit = savgol_filter(y[ps_start_index:ps_end_index], window, poly)
-        z_ps_fit = savgol_filter(z[ps_start_index:ps_end_index], window, poly)
+#         x_ps_fit = savgol_filter(x[ps_start_index:ps_end_index], window, poly)
+#         y_ps_fit = savgol_filter(y[ps_start_index:ps_end_index], window, poly)
+#         z_ps_fit = savgol_filter(z[ps_start_index:ps_end_index], window, poly)
         
-        x_ss_fit = savgol_filter(x[ss_start_index:ss_end_index], window, poly)
-        y_ss_fit = savgol_filter(y[ss_start_index:ss_end_index], window, poly)
-        z_ss_fit = savgol_filter(z[ss_start_index:ss_end_index], window, poly)
+#         x_ss_fit = savgol_filter(x[ss_start_index:ss_end_index], window, poly)
+#         y_ss_fit = savgol_filter(y[ss_start_index:ss_end_index], window, poly)
+#         z_ss_fit = savgol_filter(z[ss_start_index:ss_end_index], window, poly)
         
-        x_le = savgol_filter(x[ps_end_index:ss_start_index], 5, 3)
-        y_le = savgol_filter(y[ps_end_index:ss_start_index], 5, 3)
-        z_le = savgol_filter(z[ps_end_index:ss_start_index], 5, 3)
+#         x_le = savgol_filter(x[ps_end_index:ss_start_index], 5, 3)
+#         y_le = savgol_filter(y[ps_end_index:ss_start_index], 5, 3)
+#         z_le = savgol_filter(z[ps_end_index:ss_start_index], 5, 3)
         
 
-        x_smooth = np.concatenate([x_ps_fit, x_le, x_ss_fit])
-        y_smooth = np.concatenate([y_ps_fit, y_le, y_ss_fit])
-        z_smooth = np.concatenate([z_ps_fit, z_le, z_ss_fit])
-        r_smooth = (y_smooth**2 + z_smooth**2)**0.5
+#         x_smooth = np.concatenate([x_ps_fit, x_le, x_ss_fit])
+#         y_smooth = np.concatenate([y_ps_fit, y_le, y_ss_fit])
+#         z_smooth = np.concatenate([z_ps_fit, z_le, z_ss_fit])
+#         r_smooth = (y_smooth**2 + z_smooth**2)**0.5
         
-        x_smooth_list.append(x_smooth)
-        y_smooth_list.append(y_smooth)
-        z_smooth_list.append(z_smooth)
+#         x_smooth_list.append(x_smooth)
+#         y_smooth_list.append(y_smooth)
+#         z_smooth_list.append(z_smooth)
         
-    x_smooth_list = np.concatenate(x_smooth_list)
-    y_smooth_list = np.concatenate(y_smooth_list)
-    z_smooth_list = np.concatenate(z_smooth_list)
+#     x_smooth_list = np.concatenate(x_smooth_list)
+#     y_smooth_list = np.concatenate(y_smooth_list)
+#     z_smooth_list = np.concatenate(z_smooth_list)
 
-    return x_smooth_list, y_smooth_list, z_smooth_list
+#     return x_smooth_list, y_smooth_list, z_smooth_list
 
 
 
@@ -2329,6 +2514,8 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
 
     if smoothening:
         print('Smoothening is enabled')
+    else:
+        print('Smoothening is not enabled')
 
 
     df_2 = pd.read_csv('dataset/1D_compressor_geometry_no_splitter_filtered.csv')
@@ -2442,6 +2629,7 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
             success = False
 
             geometry_list = []
+            geometry_list_smooth = []
             geometry_1D_list = []
             blade_number_list = []
             pr_error_list = []
@@ -2524,7 +2712,7 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                 
                 if smoothening:
                     
-                    x, y, z = smoothening_3D(x,y,z, 3, 11) # third order polynomial fit with window of 11
+                    x_smooth, y_smooth, z_smooth = smoothening_3D(x,y,z, 3, 20) # third order polynomial fit with window of 11
 
                 if round(n_blades) == 0:
                     number_of_blades = 5
@@ -2534,8 +2722,9 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                     splitter_blades = 0
 
                 geometry_1D = geometry_3D_to_1D_conversion(x,y,z, number_of_blades, splitter_blades, ax_3D)
-                print(geometry_1D['R_mean_2'], geometry_1D['b_2'])
-                    
+                # print(geometry_1D['R_mean_2'], geometry_1D['b_2'])
+                
+                rake_angle = measure_rake_angle(x, y, z)
 
 
                 m_dot = m_dot_normalised*(min_max.loc['m_dot', 'max']  - min_max.loc['m_dot', 'min']) + min_max.loc['m_dot', 'min']
@@ -2557,12 +2746,14 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                 eta_list.append(eta)
                 geometry = [x,y,z]
                 geometry_list.append(geometry)
+                geometry_smooth = [x_smooth,y_smooth,z_smooth]
+                geometry_list_smooth.append(geometry_smooth)
                 geometry_1D_list.append(geometry_1D)
                 blade_number_list.append(number_of_blades)
 
                 number_of_trials += 1
 
-                if pr_error < pr_tolerance and eta_error < eta_tolerance:
+                if pr_error < pr_tolerance and eta_error < eta_tolerance and rake_angle > 0 and rake_angle < 45:
                     print(f'Number {design+1} design took {number_of_trials} trials.')
                     print(f'Pressure ratio {pr} has relative error {pr_error}% compared to {pr_original}.')
                     print(f'Efficiency {eta} has relative error {eta_error}% compared to {eta_original}. ')
@@ -2575,6 +2766,7 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                 index = pr_error_list.index(min(pr_error_list))
 
                 geometry = geometry_list[index]
+                geometry_smooth = geometry_list_smooth[index]
                 geometry_1D = geometry_1D_list[index]
                 number_of_blades = blade_number_list[index]
                 pr = pr_list[index]
@@ -2625,6 +2817,38 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                     if i != n_profiles- 1:
                         f.write("\n")
             
+
+            with open(f'{out_path}/Main_blade_smooth.curve', "w") as f:
+                for i in range(n_profiles): 
+                    x_to_store = geometry_smooth[0][i*512:(i+1)*512]
+                    y_to_store = geometry_smooth[1][i*512:(i+1)*512]
+                    z_to_store = geometry_smooth[2][i*512:(i+1)*512]
+
+
+                    # ax_3D.plot(x_to_store, y_to_store, z_to_store, markersize=1)
+                    # ax.plot(x_to_store, (y_to_store**2 + z_to_store**2)**0.5, markersize=1)
+
+                    if i == 0:
+                        x_hub = x_to_store[:250][::-1]
+                        r_hub = ((y_to_store[:250][::-1])**2 + (z_to_store[:250][::-1])**2)**0.5
+
+                    elif i == n_profiles-1:
+                        
+                        x_tip = x_to_store[:247][::-1]
+                        r_tip = ((y_to_store[:247][::-1])**2 + (z_to_store[:247][::-1])**2)**0.5
+
+                    profile = np.column_stack((x_to_store, y_to_store, z_to_store))
+
+                    f.write(f"# profile {i+1}\n") 
+                    np.savetxt(f, profile, fmt="%.12f")
+                    if i != n_profiles- 1:
+                        f.write("\n")
+
+
+
+
+
+
             # write the number of profiles
             with open(f'{out_path}/Blade_number.txt', "w") as f:
                 f.write(f"Main Blade: {number_of_blades}\n")
@@ -2641,6 +2865,9 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
 
 
             ax_3D.scatter(geometry[0], geometry[1], geometry[2], s=1)
+
+            # ax_3D.plot(geometry[0], geometry[1], geometry[2])
+
             ax.scatter(geometry[0], ((geometry[1])**2 + (geometry[2])**2)**0.5, s=1)
             print(f'Number {design} design has blade number of {number_of_blades}.')
         
@@ -4083,4 +4310,43 @@ def show_full_annulus(geometry_path, design_number):
     screenshot=f"fig/full_annulus_design_{design_number}.png",
     window_size=(3000, 3000)
 )
+
+
+
+
+def measure_rake_angle(x = 0, y = 0, z = 0, path = None):
+
+    if path == None: 
+        hub_point = [x[0], y[0], z[0]]
+        hub_point = np.array(hub_point)
+
+        tip_point = [x[-1], y[-1], z[-1]]
+        tip_point = np.array(tip_point)
+
+        v = hub_point - tip_point
+
+    else:
+        main_blade_profiles, _ = load_blade_curve(f'{path}/Main_blade.curve') 
+        trailing_edge_points = [] 
+        for profile in main_blade_profiles: 
+            trailing_edge_points.append(profile[0]) 
+            v = trailing_edge_points[0] - trailing_edge_points[-1]
+
+
+    dx, dy, dz = v
+
+    x_axis = np.array([1, 0, 0])
+
+    angle_rad = np.arccos(np.dot(v, x_axis) / np.linalg.norm(v))
+    angle_deg = np.degrees(angle_rad)
+
+    if dy > 0:
+        sign = -1
+    else:
+        sign = 1
+
+    print('The rake angle is', angle_deg*sign, 'deg.')
+
+    return angle_deg*sign
+
 
