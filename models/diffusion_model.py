@@ -388,7 +388,7 @@ if __name__ == '__main__':
     nn_structure=model_config['neural_network_sturcture']
     reduced_data_fraction=model_config['reduced_data_fraction']
     # condition = model_config['condition']
-    model_code = f"./mdl_weight/{data_structure}_{nn_structure}_{model_channel}_{model_layer}_{len(model_channel_multiplication)}_with_{num_epochs}_epochs_{reduced_data_fraction}_data"
+    model_code = f"./mdl_weight/{data_structure}_{nn_structure}_{model_channel}_{model_layer}_{len(model_channel_multiplication)}_with_{num_epochs}_epochs_{reduced_data_fraction}_data_new"
     save_path = f"{model_code}.pth"
     check_point_path = f"{model_code}_check_point.pth"
     print(f'The model weight will be saved to path {save_path}')
@@ -481,21 +481,25 @@ if __name__ == '__main__':
         coordinates = []
         cond_data = []
         
-        df_2 = pd.read_csv('dataset/1D_compressor_geometry.csv')
+        df_2 = pd.read_csv('dataset/New_compressor_geometry/1D_compressor_geometry_filtered.csv')
         compressor_index_row = df_2['geometry_index'].to_numpy()
 
         for i in range(len(df)):
+
             compressor_index = compressor_index_row[i]
             
             # this is to filter out the missing 3D geometries, to align the training data between 1D and 3D
-            file_exist = not os.path.exists(f'dataset/3D_compressor_polar_normalised/compressor_{compressor_index}.curve')
+            
+            file_exist = os.path.exists(f'dataset/New_compressor_geometry/3D_geometry_polar_normalised/compressor_{compressor_index}.curve')
+            
 
+            if file_exist:
 
-            if not file_exist:
                 coordinates.append([R_tip_1[i], R_hub_1[i], beta_b1_hub[i], beta_b1_tip[i], beta_b1_mean[i], 
                                 beta_b2[i], R_mean_2[i], b_2[i], L_z[i], s[i] ,t[i], nblades[i], b3[i], r3[i]])
                 cond_data.append([m_dot[i], omega[i], pressure_ratio[i], efficiency[i]])
 
+        
         cond_size = len(cond_data[0])
 
 
@@ -508,8 +512,8 @@ if __name__ == '__main__':
         num_components = int(model_config['component_number'])
 
 
-        df_2 = pd.read_csv('dataset/polar_minmax_per_compressor_normalised.csv')
-        df_3 = pd.read_csv('dataset/1D_compressor_geometry_no_splitter_filtered.csv')
+        df_2 = pd.read_csv('dataset/New_compressor_geometry/polar_minmax_per_compressor_normalised.csv')
+        df_3 = pd.read_csv('dataset/New_compressor_geometry/1D_compressor_geometry_filtered.csv')
 
 
         coordinates = []
@@ -532,8 +536,8 @@ if __name__ == '__main__':
 
 
     elif data_structure == '3D_coordinates' or data_structure == '3D_PCA':
-        normalised_df = pd.read_csv('dataset/1D_compressor_geometry_normalised_no_splitter_filtered.csv')
-        geometry_normalised_df = pd.read_csv('dataset/polar_minmax_per_compressor_normalised.csv')
+        normalised_df = pd.read_csv('dataset/New_compressor_geometry/1D_compressor_geometry_normalised.csv')
+        geometry_normalised_df = pd.read_csv('dataset/New_compressor_geometry/polar_minmax_per_compressor_normalised.csv')
         num_components = int(model_config['component_number'])
         curve_file = model_config['curve_file_path']
         
@@ -645,9 +649,9 @@ if __name__ == '__main__':
     print(len(train_set), len(val_set), len(test_set))
 
     # Save the dataset division indices
-    # np.save("dataset/1D_train_indices.npy", train_indices)
-    # np.save("dataset/1D_val_indices.npy", val_indices)
-    # np.save("dataset/1D_test_indices.npy", test_indices)
+    np.save("dataset/New_compressor_geometry/3D_train_indices.npy", train_indices)
+    np.save("dataset/New_compressor_geometry/3D_val_indices.npy", val_indices)
+    np.save("dataset/New_compressor_geometry/3D_test_indices.npy", test_indices)
 
 
     Training = True

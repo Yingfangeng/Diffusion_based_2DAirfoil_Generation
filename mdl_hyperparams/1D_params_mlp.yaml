@@ -1,4 +1,4 @@
-dataset_csv_path: 'dataset/1D_compressor_geometry_normalised.csv'
+dataset_csv_path: 'dataset/New_compressor_geometry/1D_compressor_geometry_normalised.csv'
 data_structure: '1D_params' 
 neural_network_sturcture: 'MLP'
 learning_rate: 1E-4

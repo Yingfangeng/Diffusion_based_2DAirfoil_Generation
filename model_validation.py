@@ -351,10 +351,10 @@ def validation_1D(device, sample_percent, model, num_steps, manual_seed, multipl
     model.eval()
     pr_tolerance = CL_tolerence
     eta_tolerance = CD_tolerence
-    df = pd.read_csv('dataset/1D_compressor_geometry_normalised_no_splitter_filtered.csv')
-    min_max = pd.read_csv('dataset/1D_compressor_geometry_minmax_no_splitter_filtered.csv')
+    df = pd.read_csv('dataset/New_compressor_geometry/1D_compressor_geometry_normalised.csv')
+    min_max = pd.read_csv('dataset/New_compressor_geometry/1D_compressor_geometry_minmax.csv')
 
-    val_indices = np.load('dataset/1D_test_indices.npy')
+    val_indices = np.load('dataset/New_compressor_geometry/1D_test_indices.npy')
 
     if ("min" in min_max.columns) and ("max" in min_max.columns):
         feature_col = min_max.columns[0]  # usually "Unnamed: 0"
@@ -1238,5 +1238,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     config_file_main = args.main_model_config
     config_file_aux = args.aux_model_config
-    model_deployment(config_file_main, sample_percent = 0.01, aux_model_config_path=config_file_aux, num_steps = 30,  manual_seed = 123,
-                     x_foil_timeout=5, CL_tolerence = 1, CD_tolerence = 5, max_iteration = 100, mode = 'intermediate')
+    model_deployment(config_file_main, sample_percent = 0.1, aux_model_config_path=config_file_aux, num_steps = 30,  manual_seed = 123,
+                     x_foil_timeout=5, CL_tolerence = 1, CD_tolerence = 1, max_iteration = 100, mode = 'intermediate')

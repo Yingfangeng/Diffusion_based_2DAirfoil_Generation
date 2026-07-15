@@ -1445,9 +1445,9 @@ def run_meanline(geometry, m_dot, omega, timeout=10):
 
 
 def load_1D_dataset():
-    df = pd.read_csv('dataset/1D_compressor_geometry_normalised_no_splitter_filtered.csv')
-    min_max = pd.read_csv('dataset/1D_compressor_geometry_minmax_no_splitter_filtered.csv')
-    val_indices = np.load('dataset/3D_test_indices.npy')
+    df = pd.read_csv('dataset/New_compressor_geometry/1D_compressor_geometry_filtered.csv')
+    min_max = pd.read_csv('dataset/New_compressor_geometry/1D_compressor_geometry_minmax.csv')
+    val_indices = np.load('dataset/New_compressor_geometry/1D_test_indices.npy')
 
     if ("min" in min_max.columns) and ("max" in min_max.columns):
         feature_col = min_max.columns[0]
