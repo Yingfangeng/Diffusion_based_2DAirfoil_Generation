@@ -559,9 +559,9 @@ def load_blade_curve(filename):
 
 
 def load_1D_dataset():
-    df = pd.read_csv('dataset/1D_compressor_geometry_normalised_no_splitter_filtered.csv')
-    min_max = pd.read_csv('dataset/1D_compressor_geometry_minmax_no_splitter_filtered.csv')
-    val_indices = np.load('dataset/3D_test_indices.npy')
+    df = pd.read_csv('dataset/New_compressor_geometry/1D_compressor_geometry_normalised.csv')
+    min_max = pd.read_csv('dataset/New_compressor_geometry/1D_compressor_geometry_minmax.csv')
+    val_indices = np.load('dataset/New_compressor_geometry/3D_test_indices.npy')
 
     if ("min" in min_max.columns) and ("max" in min_max.columns):
         feature_col = min_max.columns[0]
@@ -818,9 +818,9 @@ def validation_3D(device, sample_percent, model, aux_model, num_steps, manual_se
     df, min_max, val_indices = load_1D_dataset()
 
 
-    df_2 = pd.read_csv('dataset/1D_compressor_geometry_no_splitter_filtered.csv')
-    df_3 = pd.read_csv('dataset/polar_minmax_per_compressor_normalised.csv')
-    df_4 = pd.read_csv('dataset/polar_secondary_minmax.csv')
+    df_2 = pd.read_csv('dataset/New_compressor_geometry/1D_compressor_geometry_filtered.csv')
+    df_3 = pd.read_csv('dataset/New_compressor_geometry/polar_minmax_per_compressor_normalised.csv')
+    df_4 = pd.read_csv('dataset/New_compressor_geometry/polar_minmax_secondary_normalisation.csv')
 
 
     r_min_min = df_4['r_min_min'].iloc[0]
@@ -961,14 +961,39 @@ def validation_3D(device, sample_percent, model, aux_model, num_steps, manual_se
     
                     x, y, z = cyl_to_cart_about_x(x, r, theta)
                     
+
+                    ###############################################
+                    # Temp fix for reversed leadign edge
+                    n_profiles = 16
+                    n_points = 512
+
+                    x_2d = np.asarray(x).reshape(n_profiles, n_points)
+                    y_2d = np.asarray(y).reshape(n_profiles, n_points)
+                    z_2d = np.asarray(z).reshape(n_profiles, n_points)
+
+                    # Points 251–264 inclusive, assuming zero-based indexing
+                    x_2d[:, 251:261] = x_2d[:, 251:261][:, ::-1]
+                    y_2d[:, 251:261] = y_2d[:, 251:261][:, ::-1]
+                    z_2d[:, 251:261] = z_2d[:, 251:261][:, ::-1]
+
+                    # Flatten back to the original form
+                    x = x_2d.ravel()
+                    y = y_2d.ravel()
+                    z = z_2d.ravel()
+                    #################################################
+
+
+
+
+
                     if smoothening:
                         x, y, z = smoothening_3D(x,y,z,3,11)
 
 
                     if round(n_blades) == 0:
-                        number_of_blades =5
+                        number_of_blades =7
                     else:
-                        number_of_blades =6
+                        number_of_blades =8
 
                     geometry_1D = geometry_3D_to_1D_conversion(x,y,z, number_of_blades)
                         

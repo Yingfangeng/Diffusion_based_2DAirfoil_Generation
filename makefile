@@ -11,7 +11,5 @@ training:
 
 validation:
 
-	python model_validation.py mdl_hyperparams/1D_params_mlp.yaml mdl_hyperparams/3D_aux_mlp.yaml
-# 	python model_validation.py mdl_hyperparams/3D_coords_conv_2d_unet_75.yaml mdl_hyperparams/3D_aux_75.yaml
-# 	python model_validation.py mdl_hyperparams/3D_coords_conv_2d_unet_50.yaml mdl_hyperparams/3D_aux_50.yaml
-# 	python model_validation.py mdl_hyperparams/3D_coords_conv_2d_unet_25.yaml mdl_hyperparams/3D_aux_25.yaml
+# 	python model_validation.py mdl_hyperparams/1D_params_mlp.yaml mdl_hyperparams/3D_aux_mlp.yaml
+	python model_validation.py mdl_hyperparams/3D_coords_conv_2d_unet.yaml mdl_hyperparams/3D_aux_mlp.yaml

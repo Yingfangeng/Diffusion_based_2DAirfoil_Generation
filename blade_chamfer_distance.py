@@ -135,21 +135,21 @@ def kde_distribution_difference(P, Q):
 
 
 
-def distribution_compare():
+def distribution_compare(mode):
 
 
-    physical_distribution_path = "dataset/physical_distribution"
+    physical_distribution_path = "generated_compressor_3D_geometry/physical_sampled_geometry"
     physical_distribution_files = sorted(os.listdir(physical_distribution_path))  # ensure deterministic order
 
-    physical_distribution_file_selected_1 = physical_distribution_files[150:250]
-    physical_distribution_file_selected_2 = physical_distribution_files[250:350]
+    physical_distribution_file_selected_1 = physical_distribution_files[:100]
+    physical_distribution_file_selected_2 = physical_distribution_files[-100:]
     # print(f'There are {len(physical_distribution_file_selected_1)} physical generated profiles.')
 
-    model_generated_distribution_3D_path = "generated_compressor_3D_geometry/3D_model_generated_new"
+    model_generated_distribution_3D_path = "generated_compressor_3D_geometry/3D_model_generated_geometry"
     model_generated_distribution_3D_files = sorted(os.listdir(model_generated_distribution_3D_path))
     # print(f'There are {len(model_generated_distribution_3D_files)} 3D model generated profiles.')
 
-    model_generated_distribution_1D_path = "dataset/model_generated_distribution_1D"
+    model_generated_distribution_1D_path = "generated_compressor_3D_geometry/1D_model_generated_geometry"
     model_generated_distribution_1D_files = sorted(os.listdir(model_generated_distribution_1D_path))
     # print(f'There are {len(model_generated_distribution_1D_files)} 1D model generated profiles.')
 
@@ -160,74 +160,88 @@ def distribution_compare():
     physical_distribution_2 = []
     
     for file in physical_distribution_file_selected_1:
-        profiles, _ = load_blade_curve(f'dataset/physical_distribution/{file}')
+        profiles, _ = load_blade_curve(f'generated_compressor_3D_geometry/physical_sampled_geometry/{file}')
         physical_distribution_1.append(np.concatenate(profiles, axis=0).astype(np.float64))        
 
 
 
     for file in physical_distribution_file_selected_2:
-        profiles, _ = load_blade_curve(f'dataset/physical_distribution/{file}')
+        profiles, _ = load_blade_curve(f'generated_compressor_3D_geometry/physical_sampled_geometry/{file}')
         physical_distribution_2.append(np.concatenate(profiles, axis=0).astype(np.float64))
 
 
     for file in model_generated_distribution_3D_files:
-        profiles, _ = load_blade_curve(f'generated_compressor_3D_geometry/3D_model_generated_new/{file}/Main_blade.curve')
+        profiles, _ = load_blade_curve(f'generated_compressor_3D_geometry/3D_model_generated_geometry/{file}/Main_blade.curve')
         model_generated_distribution_3D.append(np.concatenate(profiles, axis=0).astype(np.float64))
 
     for file in model_generated_distribution_1D_files:
-        profiles, _ = load_blade_curve(f'dataset/model_generated_distribution_1D/{file}')
+        profiles, _ = load_blade_curve(f'generated_compressor_3D_geometry/1D_model_generated_geometry/{file}')
         model_generated_distribution_1D.append(np.concatenate(profiles, axis=0).astype(np.float64))
 
-
+    print(len(physical_distribution_1), len(physical_distribution_2))
     assert len(physical_distribution_1) == len(physical_distribution_2)
+    
 
     
-    physical_distribution_density = kernel_density_estimate_3D(physical_distribution_1)
-    # physical_distribution_density_2 = kernel_density_estimate_3D(physical_distribution_2)
-    model_generated_distribution_density_3D = kernel_density_estimate_3D(model_generated_distribution_3D)
-    # model_generated_distribution_density_1D = kernel_density_estimate_3D(model_generated_distribution_1D)
-    difference = kde_distribution_difference(physical_distribution_density, model_generated_distribution_density_3D)
-    print('3D and physical', difference)
-    # difference = kde_distribution_difference(physical_distribution_density, model_generated_distribution_density_1D)
-    # print('1D and physical', difference)
-    # difference = kde_distribution_difference(physical_distribution_density, physical_distribution_density_2)
-    # print('two physical', difference)
-
-    # final_distance_1 = compute_chamfer_distance_and_ssim(model_generated_distribution_3D, physical_distribution_1)
-    # final_distance_2 = compute_chamfer_distance_and_ssim(physical_distribution_1, model_generated_distribution_3D)
-    # print("The SSIM between the model generated blade distribution and the physical distribution") 
-    # print(final_distance_1, final_distance_2, np.mean([final_distance_1, final_distance_2]))
-
-    # final_distance_1 = compute_chamfer_distance_and_ssim(model_generated_distribution_1D, physical_distribution_1)
-    # final_distance_2 = compute_chamfer_distance_and_ssim(physical_distribution_1, model_generated_distribution_1D)
-    # print("The SSIM between two physical distributions")
-    # print(final_distance_1, final_distance_2, np.mean([final_distance_1, final_distance_2]))
-
-
-    # final_distance_1 = compute_chamfer_distance_and_ssim(physical_distribution_1, physical_distribution_2)
-    # final_distance_2 = compute_chamfer_distance_and_ssim(physical_distribution_2, physical_distribution_1)
-    # print("The SSIM between two physical distributions")
-    # print(final_distance_1, final_distance_2, np.mean([final_distance_1, final_distance_2]))
+    
 
 
 
-    # final_distance_1 = compute_chamfer_distance(model_generated_distribution_3D, physical_distribution_1)
-    # final_distance_2 = compute_chamfer_distance(physical_distribution_1, model_generated_distribution_3D)
-    # print("The CD between the 3D model generated blade distribution and the physical distribution") 
-    # print(final_distance_1, final_distance_2, np.mean([final_distance_1, final_distance_2]))
+
+    if mode == 'SSIM':
+        final_distance_1 = compute_chamfer_distance_and_ssim(model_generated_distribution_3D, physical_distribution_1)
+        final_distance_2 = compute_chamfer_distance_and_ssim(physical_distribution_1, model_generated_distribution_3D)
+        print("The SSIM between the 3D model generated blade distribution and the physical distribution") 
+        print(final_distance_1, final_distance_2, np.mean([final_distance_1, final_distance_2]))
+
+        final_distance_1 = compute_chamfer_distance_and_ssim(model_generated_distribution_1D, physical_distribution_1)
+        final_distance_2 = compute_chamfer_distance_and_ssim(physical_distribution_1, model_generated_distribution_1D)
+        print("The SSIM between the 1D model generated blade distribution and the physical distribution")
+        print(final_distance_1, final_distance_2, np.mean([final_distance_1, final_distance_2]))
 
 
-    # final_distance_1 = compute_chamfer_distance(model_generated_distribution_1D, physical_distribution_1)
-    # final_distance_2 = compute_chamfer_distance(physical_distribution_1, model_generated_distribution_1D)
-    # print("The CD between the 1D model generated blade distribution and the physical distribution") 
-    # print(final_distance_1, final_distance_2, np.mean([final_distance_1, final_distance_2]))
+        final_distance_1 = compute_chamfer_distance_and_ssim(physical_distribution_1, physical_distribution_2)
+        final_distance_2 = compute_chamfer_distance_and_ssim(physical_distribution_2, physical_distribution_1)
+        print("The SSIM between two physical distributions")
+        print(final_distance_1, final_distance_2, np.mean([final_distance_1, final_distance_2]))
 
-    # final_distance_1 = compute_chamfer_distance(physical_distribution_1, physical_distribution_2)
-    # final_distance_2 = compute_chamfer_distance(physical_distribution_2, physical_distribution_1)
-    # print("The CD between two physical distributions")
-    # print(final_distance_1, final_distance_2, np.mean([final_distance_1, final_distance_2]))
+
+    elif mode == 'CD': 
+        final_distance_1 = compute_chamfer_distance(model_generated_distribution_3D, physical_distribution_1)
+        final_distance_2 = compute_chamfer_distance(physical_distribution_1, model_generated_distribution_3D)
+        print("The CD between the 3D model generated blade distribution and the physical distribution") 
+        print(final_distance_1, final_distance_2, np.mean([final_distance_1, final_distance_2]))
+
+
+        final_distance_1 = compute_chamfer_distance(model_generated_distribution_1D, physical_distribution_1)
+        final_distance_2 = compute_chamfer_distance(physical_distribution_1, model_generated_distribution_1D)
+        print("The CD between the 1D model generated blade distribution and the physical distribution") 
+        print(final_distance_1, final_distance_2, np.mean([final_distance_1, final_distance_2]))
+
+        final_distance_1 = compute_chamfer_distance(physical_distribution_1, physical_distribution_2)
+        final_distance_2 = compute_chamfer_distance(physical_distribution_2, physical_distribution_1)
+        print("The CD between two physical distributions")
+        print(final_distance_1, final_distance_2, np.mean([final_distance_1, final_distance_2]))
+
+
+    elif mode == 'JSD':
+        physical_distribution_density = kernel_density_estimate_3D(physical_distribution_1)
+        physical_distribution_density_2 = kernel_density_estimate_3D(physical_distribution_2)
+        model_generated_distribution_density_3D = kernel_density_estimate_3D(model_generated_distribution_3D)
+        model_generated_distribution_density_1D = kernel_density_estimate_3D(model_generated_distribution_1D)
+        
+        difference = kde_distribution_difference(physical_distribution_density, model_generated_distribution_density_3D)
+        print('3D and physical', difference)
+        difference = kde_distribution_difference(physical_distribution_density, model_generated_distribution_density_1D)
+        print('1D and physical', difference)
+        difference = kde_distribution_difference(physical_distribution_density, physical_distribution_density_2)
+        print('two physical', difference)
+
+
+
+
 
 
 
 if __name__ == '__main__':
-    distribution_compare()
+    distribution_compare('SSIM')
