@@ -1693,8 +1693,8 @@ def off_design_plot_1D(multi_design_geometry, m_dot_design_point, omega, pr_desi
         ax2.grid(True, ls = ':')
         ax2.legend(fontsize = 14)
 
-        save_fig_custom(fig, file_path='fig', file_name=f'off_design_pr_plot', overwrite=True, dpi = 500)
-        save_fig_custom(fig2, file_path='fig', file_name=f'off_design_eta_plot', overwrite=True, dpi = 500)
+    save_fig_custom(fig, file_path='fig', file_name=f'off_design_pr_plot', overwrite=True, dpi = 500)
+    save_fig_custom(fig2, file_path='fig', file_name=f'off_design_eta_plot', overwrite=True, dpi = 500)
     plt.show()
 
 
