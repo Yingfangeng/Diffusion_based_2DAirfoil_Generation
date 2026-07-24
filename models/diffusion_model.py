@@ -475,8 +475,10 @@ if __name__ == '__main__':
 
         m_dot = df['m_dot'].to_numpy()
         omega = df['omega'].to_numpy()
-        pressure_ratio = df['pressure_ratio'].to_numpy()
-        efficiency = df['efficiency'].to_numpy()
+
+        # changed to impeller only
+        pressure_ratio = df['imp_pressure_ratio'].to_numpy()
+        efficiency = df['imp_efficiency'].to_numpy()
         
         coordinates = []
         cond_data = []
@@ -529,7 +531,7 @@ if __name__ == '__main__':
             
                 coordinates.append([row_2['x_min'].item(), row_2['x_max'].item(), row_2['r_min'].item(), row_2['r_max'].item(), row_2['theta_min'].item(), row_2['theta_max'].item(), row['nblades']])
                 
-                cond_data.append([row['m_dot'], row['omega'], row['pressure_ratio'], row['efficiency']])
+                cond_data.append([row['m_dot'], row['omega'], row['imp_pressure_ratio'], row['imp_efficiency']])
         
         cond_size = len(cond_data[0])
 
@@ -581,7 +583,7 @@ if __name__ == '__main__':
                     
                     for _, row in df_2.iterrows():
                         
-                        cond_data.append([row['m_dot'], row['omega'], row['pressure_ratio'], row['efficiency'], df_3['x_min'], df_3['x_max'], df_3['r_min'], df_3['r_max'], df_3['theta_min'], df_3['theta_max'], row['nblades'], row['n_splitter_blades']])
+                        cond_data.append([row['m_dot'], row['omega'], row['imp_pressure_ratio'], row['imp_efficiency'], df_3['x_min'], df_3['x_max'], df_3['r_min'], df_3['r_max'], df_3['theta_min'], df_3['theta_max'], row['nblades'], row['n_splitter_blades']])
                         
                         name.append(compressor_name)
             

@@ -332,7 +332,7 @@ def run_meanline(geometry, m_dot, omega, timeout=10):
         meanline.execution_impeller_outlet(m_dot, omega, 'Centrifugal')
         meanline.execution_vaneless_diffuser('Impeller', 'Centrifugal', m_dot)
         signal.alarm(0)
-        return meanline.pressure_ratio, meanline.stage_eff
+        return meanline.impeller_pressure_ratio, meanline.impeller_eff
 
     except TimeoutException:
         print("Take too long for meanline to converge!")
@@ -386,8 +386,8 @@ def validation_1D(device, sample_percent, model, num_steps, manual_seed, multipl
         
         while design < multiple_design:
 
-            pr_normalised = df.loc[i, 'pressure_ratio']
-            eta_normalised = df.loc[i, 'efficiency']
+            pr_normalised = df.loc[i, 'imp_pressure_ratio']
+            eta_normalised = df.loc[i, 'imp_efficiency']
             omega_normalised = df.loc[i, 'omega']
             m_dot_normalised = df.loc[i, 'm_dot']
 
@@ -464,8 +464,8 @@ def validation_1D(device, sample_percent, model, num_steps, manual_seed, multipl
                 m_dot = m_dot_normalised*(min_max.loc['m_dot', 'max'] - min_max.loc['m_dot', 'min']) + min_max.loc['m_dot', 'min']
                 omega = omega_normalised*(min_max.loc['omega', 'max']- min_max.loc['omega', 'min']) + min_max.loc['omega', 'min']
 
-                pr_original = pr_normalised*(min_max.loc['pressure_ratio', 'max']- min_max.loc['pressure_ratio', 'min']) + min_max.loc['pressure_ratio', 'min']
-                eta_original = eta_normalised*(min_max.loc['efficiency', 'max']- min_max.loc['efficiency', 'min']) + min_max.loc['efficiency', 'min']
+                pr_original = pr_normalised*(min_max.loc['imp_pressure_ratio', 'max']- min_max.loc['imp_pressure_ratio', 'min']) + min_max.loc['imp_pressure_ratio', 'min']
+                eta_original = eta_normalised*(min_max.loc['imp_efficiency', 'max']- min_max.loc['imp_efficiency', 'min']) + min_max.loc['imp_efficiency', 'min']
 
                 RPM = (omega*60)/(2*np.pi)
 
@@ -860,8 +860,8 @@ def validation_3D(device, sample_percent, model, aux_model, num_steps, manual_se
         i = val_indices[idx]
 
 
-        pr_normalised = df.loc[i, 'pressure_ratio']
-        eta_normalised = df.loc[i, 'efficiency']
+        pr_normalised = df.loc[i, 'imp_pressure_ratio']
+        eta_normalised = df.loc[i, 'imp_efficiency']
         omega_normalised = df.loc[i, 'omega']
         m_dot_normalised = df.loc[i, 'm_dot']
 
@@ -1002,8 +1002,8 @@ def validation_3D(device, sample_percent, model, aux_model, num_steps, manual_se
 
                     m_dot = m_dot_normalised*(min_max.loc['m_dot', 'max']  - min_max.loc['m_dot', 'min']) + min_max.loc['m_dot', 'min']
                     omega = omega_normalised*(min_max.loc['omega', 'max']  - min_max.loc['omega', 'min']) + min_max.loc['omega', 'min']
-                    pr_original = pr_normalised*(min_max.loc['pressure_ratio', 'max']  - min_max.loc['pressure_ratio', 'min']) + min_max.loc['pressure_ratio', 'min']
-                    eta_original = eta_normalised*(min_max.loc['efficiency', 'max']  - min_max.loc['efficiency', 'min']) + min_max.loc['efficiency', 'min']
+                    pr_original = pr_normalised*(min_max.loc['imp_pressure_ratio', 'max']  - min_max.loc['imp_pressure_ratio', 'min']) + min_max.loc['imp_pressure_ratio', 'min']
+                    eta_original = eta_normalised*(min_max.loc['imp_efficiency', 'max']  - min_max.loc['imp_efficiency', 'min']) + min_max.loc['imp_efficiency', 'min']
 
                     
                     RPM = (omega*60)/(2*np.pi)

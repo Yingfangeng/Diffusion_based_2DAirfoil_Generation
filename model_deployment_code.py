@@ -1429,7 +1429,7 @@ def run_meanline(geometry, m_dot, omega, timeout=10):
         meanline.execution_impeller_outlet(m_dot, omega, 'Centrifugal')
         meanline.execution_vaneless_diffuser('Impeller', 'Centrifugal', m_dot)
         signal.alarm(0)
-        return meanline.pressure_ratio, meanline.stage_eff
+        return meanline.impeller_pressure_ratio, meanline.impeller_eff
 
     except TimeoutException:
         print("Take too long for meanline to converge!")
@@ -1498,9 +1498,9 @@ def test_condition_1D(m_dot, RPM, pr, eta):
     omega = RPM * 2*np.pi / 60
     df, min_max, val_indices = load_1D_dataset()
 
-    pr_normalised = (pr - min_max.loc['pressure_ratio', 'min'])/(min_max.loc['pressure_ratio', 'max'] - min_max.loc['pressure_ratio', 'min'])
+    pr_normalised = (pr - min_max.loc['imp_pressure_ratio', 'min'])/(min_max.loc['imp_pressure_ratio', 'max'] - min_max.loc['imp_pressure_ratio', 'min'])
     m_dot_normalised = (m_dot - min_max.loc['m_dot', 'min'])/(min_max.loc['m_dot', 'max'] - min_max.loc['m_dot', 'min'])
-    eta_normalised = (eta - min_max.loc['efficiency', 'min'])/(min_max.loc['efficiency', 'max'] - min_max.loc['efficiency', 'min'])
+    eta_normalised = (eta - min_max.loc['imp_efficiency', 'min'])/(min_max.loc['imp_efficiency', 'max'] - min_max.loc['imp_efficiency', 'min'])
     omega_normalised = (omega - min_max.loc['omega', 'min'])/(min_max.loc['omega', 'max'] - min_max.loc['omega', 'min'])
     
     return pr_normalised, m_dot_normalised, eta_normalised, omega_normalised
@@ -1720,8 +1720,8 @@ def validation_1D(mode, device, sample_number, model, num_steps, manual_seed, mu
         multiple_design_geometry = []
         if mode == 'validation':
             i = val_indices[idx]
-            pr_normalised = df.loc[i, 'pressure_ratio']
-            eta_normalised = df.loc[i, 'efficiency']
+            pr_normalised = df.loc[i, 'imp_pressure_ratio']
+            eta_normalised = df.loc[i, 'imp_efficiency']
             omega_normalised = df.loc[i, 'omega']
             m_dot_normalised = df.loc[i, 'm_dot']
             
@@ -1813,8 +1813,8 @@ def validation_1D(mode, device, sample_number, model, num_steps, manual_seed, mu
                 m_dot = m_dot_normalised*(min_max.loc['m_dot', 'max'] + deviation - min_max.loc['m_dot', 'min']) + min_max.loc['m_dot', 'min']
                 omega = omega_normalised*(min_max.loc['omega', 'max'] + deviation - min_max.loc['omega', 'min']) + min_max.loc['omega', 'min']
 
-                pr_original = pr_normalised*(min_max.loc['pressure_ratio', 'max'] + deviation - min_max.loc['pressure_ratio', 'min']) + min_max.loc['pressure_ratio', 'min']
-                eta_original = eta_normalised*(min_max.loc['efficiency', 'max'] + deviation - min_max.loc['efficiency', 'min']) + min_max.loc['efficiency', 'min']
+                pr_original = pr_normalised*(min_max.loc['imp_pressure_ratio', 'max'] + deviation - min_max.loc['imp_pressure_ratio', 'min']) + min_max.loc['imp_pressure_ratio', 'min']
+                eta_original = eta_normalised*(min_max.loc['imp_efficiency', 'max'] + deviation - min_max.loc['imp_efficiency', 'min']) + min_max.loc['imp_efficiency', 'min']
 
                 RPM = (omega*60)/(2*np.pi)
 
@@ -1862,8 +1862,8 @@ def validation_1D(mode, device, sample_number, model, num_steps, manual_seed, mu
             row = geometry.copy()
             row['m_dot'] = m_dot
             row['omega'] = omega
-            row['pressure_ratio'] = pr_original
-            row['efficiency'] = eta_original
+            row['imp_pressure_ratio'] = pr_original
+            row['imp_efficiency'] = eta_original
             pd.DataFrame([row]).to_csv(out_csv, mode="a", header=True, index=False)
 
 
@@ -2556,8 +2556,8 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
         if mode == 'validation':
             i = val_indices[idx]
 
-            pr_normalised = df.loc[i, 'pressure_ratio']
-            eta_normalised = df.loc[i, 'efficiency']
+            pr_normalised = df.loc[i, 'imp_pressure_ratio']
+            eta_normalised = df.loc[i, 'imp_efficiency']
             omega_normalised = df.loc[i, 'omega']
             m_dot_normalised = df.loc[i, 'm_dot']
             n_blades = df.loc[i, 'nblades']
@@ -2750,8 +2750,8 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
 
                 m_dot = m_dot_normalised*(min_max.loc['m_dot', 'max']  - min_max.loc['m_dot', 'min']) + min_max.loc['m_dot', 'min']
                 omega = omega_normalised*(min_max.loc['omega', 'max']  - min_max.loc['omega', 'min']) + min_max.loc['omega', 'min']
-                pr_original = pr_normalised*(min_max.loc['pressure_ratio', 'max']  - min_max.loc['pressure_ratio', 'min']) + min_max.loc['pressure_ratio', 'min']
-                eta_original = eta_normalised*(min_max.loc['efficiency', 'max']  - min_max.loc['efficiency', 'min']) + min_max.loc['efficiency', 'min']
+                pr_original = pr_normalised*(min_max.loc['imp_pressure_ratio', 'max']  - min_max.loc['imp_pressure_ratio', 'min']) + min_max.loc['imp_pressure_ratio', 'min']
+                eta_original = eta_normalised*(min_max.loc['imp_efficiency', 'max']  - min_max.loc['imp_efficiency', 'min']) + min_max.loc['imp_efficiency', 'min']
                 print('m_dot', m_dot, 'omega', omega)
                 
                 RPM = (omega*60)/(2*np.pi)
@@ -3798,20 +3798,23 @@ def pca_reconstruct_aerofoil_comparison(component_number):
 def compare_3D_distribution(mode):
 
     # fig, ax = plt.subplots()
-    # fig_2, ax_2 = plt.subplots()
-    fig_3, ax_3 = plt.subplots()
+    fig_2, ax_2 = plt.subplots()
+    # fig_3, ax_3 = plt.subplots()
     # fig_4, ax_4 = plt.subplots()
     cmap = plt.get_cmap("tab10")
     
-    physical_distribution = "generated_compressor_3D_geometry/physical_sampled_geometry"
+    # physical_distribution = "generated_compressor_3D_geometry/physical_sampled_geometry"
     # model_generated_distribution_3D = "generated_compressor_3D_geometry/3D_model_generated"
-    # model_generated_distribution_1D = "generated_compressor_3D_geometry/1D_model_generated_16_reversed"
+    model_generated_distribution_1D = "generated_compressor_3D_geometry/1D_model_generated_16_profiles_reversed"
     
-    physical_distribution_files = sorted(os.listdir(physical_distribution))
-    # model_generated_distribution_3D_files = sorted(os.listdir(model_generated_distribution_3D))
-    # model_generated_distribution_1D_files = sorted(os.listdir(model_generated_distribution_1D))
     # physical_distribution_files = sorted(os.listdir(physical_distribution))
-    physical_distribution_files = physical_distribution_files[100:]
+    # model_generated_distribution_3D_files = sorted(os.listdir(model_generated_distribution_3D))
+    model_generated_distribution_1D_files = sorted(os.listdir(model_generated_distribution_1D))
+    model_generated_distribution_1D_files = model_generated_distribution_1D_files[:100]
+    
+
+    # physical_distribution_files = sorted(os.listdir(physical_distribution))
+    # physical_distribution_files = physical_distribution_files[100:]
 
 
     if mode == 'individual':
@@ -3949,18 +3952,18 @@ def compare_3D_distribution(mode):
 
 
         # 1D Model generated
-        # X2, R2 = [], []
-        # for compressor_index in range(100):
-        #     try: 
-        #         profiles, _ = load_blade_curve(f'{model_generated_distribution_1D}/0.09_80000_2.70_0.82_design_{compressor_index+1}.curve')
-        #         profiles = [profiles[0], profiles[-1]]
-        #         for profile in profiles:
-        #             x = profile[:, 0]
-        #             r = np.sqrt(profile[:,1]**2 + profile[:,2]**2)
-        #             X2.append(x); R2.append(r)
-        #     except FileNotFoundError:
-        #         pass
-        # plot_kde(ax_2, np.concatenate(X2), np.concatenate(R2))
+        X2, R2 = [], []
+        for compressor_index in range(100):
+            try: 
+                profiles, _ = load_blade_curve(f'{model_generated_distribution_1D}/compressor_{compressor_index+1}.curve')
+                profiles = [profiles[0], profiles[-1]]
+                for profile in profiles:
+                    x = profile[:, 0]
+                    r = np.sqrt(profile[:,1]**2 + profile[:,2]**2)
+                    X2.append(x); R2.append(r)
+            except FileNotFoundError:
+                pass
+        plot_kde(ax_2, np.concatenate(X2), np.concatenate(R2))
         # ax_2.set_title('1D Model Generated Distribution')
 
 
@@ -3996,21 +3999,21 @@ def compare_3D_distribution(mode):
         # ax_4.set_title('Training Data Distribution')
 
         # Physical
-        X3, R3 = [], []
-        for file in physical_distribution_files:
-            profiles, _ = load_blade_curve(f'generated_compressor_3D_geometry/physical_sampled_geometry/{file}')
-            profiles = [profiles[0], profiles[-1]]
-            for profile in profiles:
-                x = profile[:, 0]
-                r = np.sqrt(profile[:,1]**2 + profile[:,2]**2)
-                X3.append(x); R3.append(r)
+        # X3, R3 = [], []
+        # for file in physical_distribution_files:
+        #     profiles, _ = load_blade_curve(f'generated_compressor_3D_geometry/physical_sampled_geometry/{file}')
+        #     profiles = [profiles[0], profiles[-1]]
+        #     for profile in profiles:
+        #         x = profile[:, 0]
+        #         r = np.sqrt(profile[:,1]**2 + profile[:,2]**2)
+        #         X3.append(x); R3.append(r)
 
-        plot_kde(ax_3, np.concatenate(X3), np.concatenate(R3))
+        # plot_kde(ax_3, np.concatenate(X3), np.concatenate(R3))
         # ax_3.set_title('Physical Distribution')
     
     # save_fig_custom(fig, file_path='fig', file_name=f'3D_model_generated_distribution', overwrite=True, dpi = 500)
-    # save_fig_custom(fig_2, file_path='fig', file_name=f'1D_model_generated_distribution', overwrite=True, dpi = 500)
-    save_fig_custom(fig_3, file_path='fig', file_name=f'meanline_model_generated_distribution_1', overwrite=True, dpi = 500)
+    save_fig_custom(fig_2, file_path='fig', file_name=f'1D_model_generated_distribution', overwrite=True, dpi = 500)
+    # save_fig_custom(fig_3, file_path='fig', file_name=f'meanline_model_generated_distribution_1', overwrite=True, dpi = 500)
     # save_fig_custom(fig_4, file_path='fig', file_name=f'training_data_distribution', overwrite=True, dpi = 500)
 
 
