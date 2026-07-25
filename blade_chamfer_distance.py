@@ -142,7 +142,7 @@ def distribution_compare(mode):
     physical_distribution_files = sorted(os.listdir(physical_distribution_path))  # ensure deterministic order
 
     physical_distribution_file_selected_1 = physical_distribution_files[:100]
-    physical_distribution_file_selected_2 = physical_distribution_files[-100:]
+    physical_distribution_file_selected_2 = physical_distribution_files[100:200]
     # print(f'There are {len(physical_distribution_file_selected_1)} physical generated profiles.')
 
     model_generated_distribution_3D_path = "generated_compressor_3D_geometry/3D_model_generated_geometry"
@@ -151,7 +151,9 @@ def distribution_compare(mode):
 
     model_generated_distribution_1D_path = "generated_compressor_3D_geometry/1D_model_generated_geometry"
     model_generated_distribution_1D_files = sorted(os.listdir(model_generated_distribution_1D_path))
-    # print(f'There are {len(model_generated_distribution_1D_files)} 1D model generated profiles.')
+
+    model_generated_distribution_1D_files = model_generated_distribution_1D_files[:100]
+    print(f'There are {len(model_generated_distribution_1D_files)} 1D model generated profiles.')
 
     model_generated_distribution_3D = []
     model_generated_distribution_1D = []
@@ -189,13 +191,13 @@ def distribution_compare(mode):
 
 
     if mode == 'SSIM':
-        final_distance_1 = compute_chamfer_distance_and_ssim(model_generated_distribution_3D, physical_distribution_1)
-        final_distance_2 = compute_chamfer_distance_and_ssim(physical_distribution_1, model_generated_distribution_3D)
+        final_distance_1 = compute_chamfer_distance_and_ssim(model_generated_distribution_3D, physical_distribution_2)
+        final_distance_2 = compute_chamfer_distance_and_ssim(physical_distribution_2, model_generated_distribution_3D)
         print("The SSIM between the 3D model generated blade distribution and the physical distribution") 
         print(final_distance_1, final_distance_2, np.mean([final_distance_1, final_distance_2]))
 
-        final_distance_1 = compute_chamfer_distance_and_ssim(model_generated_distribution_1D, physical_distribution_1)
-        final_distance_2 = compute_chamfer_distance_and_ssim(physical_distribution_1, model_generated_distribution_1D)
+        final_distance_1 = compute_chamfer_distance_and_ssim(model_generated_distribution_1D, physical_distribution_2)
+        final_distance_2 = compute_chamfer_distance_and_ssim(physical_distribution_2, model_generated_distribution_1D)
         print("The SSIM between the 1D model generated blade distribution and the physical distribution")
         print(final_distance_1, final_distance_2, np.mean([final_distance_1, final_distance_2]))
 
@@ -207,14 +209,14 @@ def distribution_compare(mode):
 
 
     elif mode == 'CD': 
-        final_distance_1 = compute_chamfer_distance(model_generated_distribution_3D, physical_distribution_1)
-        final_distance_2 = compute_chamfer_distance(physical_distribution_1, model_generated_distribution_3D)
+        final_distance_1 = compute_chamfer_distance(model_generated_distribution_3D, physical_distribution_2)
+        final_distance_2 = compute_chamfer_distance(physical_distribution_2, model_generated_distribution_3D)
         print("The CD between the 3D model generated blade distribution and the physical distribution") 
         print(final_distance_1, final_distance_2, np.mean([final_distance_1, final_distance_2]))
 
 
-        final_distance_1 = compute_chamfer_distance(model_generated_distribution_1D, physical_distribution_1)
-        final_distance_2 = compute_chamfer_distance(physical_distribution_1, model_generated_distribution_1D)
+        final_distance_1 = compute_chamfer_distance(model_generated_distribution_1D, physical_distribution_2)
+        final_distance_2 = compute_chamfer_distance(physical_distribution_2, model_generated_distribution_1D)
         print("The CD between the 1D model generated blade distribution and the physical distribution") 
         print(final_distance_1, final_distance_2, np.mean([final_distance_1, final_distance_2]))
 
@@ -230,9 +232,9 @@ def distribution_compare(mode):
         model_generated_distribution_density_3D = kernel_density_estimate_3D(model_generated_distribution_3D)
         model_generated_distribution_density_1D = kernel_density_estimate_3D(model_generated_distribution_1D)
         
-        difference = kde_distribution_difference(physical_distribution_density, model_generated_distribution_density_3D)
+        difference = kde_distribution_difference(physical_distribution_density_2, model_generated_distribution_density_3D)
         print('3D and physical', difference)
-        difference = kde_distribution_difference(physical_distribution_density, model_generated_distribution_density_1D)
+        difference = kde_distribution_difference(physical_distribution_density_2, model_generated_distribution_density_1D)
         print('1D and physical', difference)
         difference = kde_distribution_difference(physical_distribution_density, physical_distribution_density_2)
         print('two physical', difference)
@@ -244,4 +246,24 @@ def distribution_compare(mode):
 
 
 if __name__ == '__main__':
-    distribution_compare('SSIM')
+    distribution_compare('JSD')
+
+
+# 25/07 results
+
+# CD
+# 3D = 2.31
+# 1D = 2.32
+# phys = 2.17
+
+# SSIM
+# 3D = 0.970
+# 1D = 0.971
+# phys = 0.973
+
+# JSD
+# 3D = 0.6223
+# 1D = 0.04955
+# phys = 0.0488
+
+# scp yg1922@ic-29dv5f4.dept.ic.ac.uk:/home/yg1922/Desktop/Yingfan_FYP_Code/Diffusion_based_2DAirfoil_Generation/hpc_test.py yg1922@login-ai.cx3.hpc.ic.ac.uk:/rds/general/user/yg1922/home

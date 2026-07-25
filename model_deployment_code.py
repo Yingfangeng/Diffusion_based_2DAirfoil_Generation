@@ -2730,11 +2730,6 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                 z = z_2d.ravel()
                 #################################################
 
-
-                if smoothening:
-                    
-                    x_smooth, y_smooth, z_smooth = smoothening_3D(x,y,z, 3, 20) # third order polynomial fit with window of 11
-
                 if round(n_blades) == 0:
                     number_of_blades = 7
                     splitter_blades = 0
@@ -2743,16 +2738,18 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
                     splitter_blades = 0
 
                 geometry_1D = geometry_3D_to_1D_conversion(x,y,z, number_of_blades, splitter_blades, ax_3D)
-                # print(geometry_1D['R_mean_2'], geometry_1D['b_2'])
-                
                 rake_angle = measure_rake_angle(x, y, z)
+
+                if smoothening:
+                    x_smooth, y_smooth, z_smooth = smoothening_3D(x,y,z, 3, 20) # third order polynomial fit with window of 11
+                    
 
 
                 m_dot = m_dot_normalised*(min_max.loc['m_dot', 'max']  - min_max.loc['m_dot', 'min']) + min_max.loc['m_dot', 'min']
                 omega = omega_normalised*(min_max.loc['omega', 'max']  - min_max.loc['omega', 'min']) + min_max.loc['omega', 'min']
                 pr_original = pr_normalised*(min_max.loc['imp_pressure_ratio', 'max']  - min_max.loc['imp_pressure_ratio', 'min']) + min_max.loc['imp_pressure_ratio', 'min']
                 eta_original = eta_normalised*(min_max.loc['imp_efficiency', 'max']  - min_max.loc['imp_efficiency', 'min']) + min_max.loc['imp_efficiency', 'min']
-                print('m_dot', m_dot, 'omega', omega)
+                
                 
                 RPM = (omega*60)/(2*np.pi)
 
@@ -2760,6 +2757,7 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
 
                 pr_error = 100*abs(pr - pr_original) / (pr_original)
                 eta_error = 100*abs(eta - eta_original) / (eta_original)
+                print(pr, eta)
                 
                 pr_error_list.append(pr_error)
                 eta_error_list.append(eta_error)
@@ -2774,7 +2772,7 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
 
                 number_of_trials += 1
 
-                if pr_error < pr_tolerance and eta_error < eta_tolerance and rake_angle > 0 and rake_angle < 45: # and geometry_1D['L_z'] >= 0.027 and geometry_1D['L_z'] <= 0.029 and number_of_blades == 8:
+                if pr_error < pr_tolerance and eta_error < eta_tolerance and rake_angle > 0 and rake_angle < 45:# and geometry_1D['L_z'] >= 0.027 and geometry_1D['L_z'] <= 0.029 and number_of_blades == 8:
                     print(f'Number {design+1} design took {number_of_trials} trials.')
                     print(f'Pressure ratio {pr} has relative error {pr_error}% compared to {pr_original}.')
                     print(f'Efficiency {eta} has relative error {eta_error}% compared to {eta_original}. ')
@@ -2965,8 +2963,8 @@ def denoising_plot_3D(mode, device, sample_number, model, aux_model, num_steps, 
         if mode == 'denoise_process_plot_3D':
             i = val_indices[idx]
 
-            pr_normalised = df.loc[i, 'pressure_ratio']
-            eta_normalised = df.loc[i, 'efficiency']
+            pr_normalised = df.loc[i, 'imp_pressure_ratio']
+            eta_normalised = df.loc[i, 'imp_efficiency']
             omega_normalised = df.loc[i, 'omega']
             m_dot_normalised = df.loc[i, 'm_dot']
             compressor_index = df_2.loc[i, 'geometry_index']
@@ -3615,10 +3613,10 @@ def extrapolation_test_set_generation_1D():
     extrapolation = []
 
     for _, row in tqdm(df_train.iterrows()):
-        pr = row['pressure_ratio']
-        eta = row['efficiency']
+        pr = row['imp_pressure_ratio']
+        eta = row['imp_efficiency']
 
-        df_pr = df_train[abs(df_train['pressure_ratio'] - pr) <= 0.03]
+        df_pr = df_train[abs(df_train['imp_pressure_ratio'] - pr) <= 0.03]
         
         max_eta = df_pr['efficiency'].max()
 
@@ -3795,138 +3793,25 @@ def pca_reconstruct_aerofoil_comparison(component_number):
 
 
 
-def compare_3D_distribution(mode):
+def compare_3D_distribution(plot):
 
-    # fig, ax = plt.subplots()
-    fig_2, ax_2 = plt.subplots()
-    # fig_3, ax_3 = plt.subplots()
-    # fig_4, ax_4 = plt.subplots()
-    cmap = plt.get_cmap("tab10")
+    def plot_kde(ax, X, R):
     
-    # physical_distribution = "generated_compressor_3D_geometry/physical_sampled_geometry"
-    # model_generated_distribution_3D = "generated_compressor_3D_geometry/3D_model_generated"
-    model_generated_distribution_1D = "generated_compressor_3D_geometry/1D_model_generated_16_profiles_reversed"
-    
-    # physical_distribution_files = sorted(os.listdir(physical_distribution))
-    # model_generated_distribution_3D_files = sorted(os.listdir(model_generated_distribution_3D))
-    model_generated_distribution_1D_files = sorted(os.listdir(model_generated_distribution_1D))
-    model_generated_distribution_1D_files = model_generated_distribution_1D_files[:100]
-    
-
-    # physical_distribution_files = sorted(os.listdir(physical_distribution))
-    # physical_distribution_files = physical_distribution_files[100:]
-
-
-    if mode == 'individual':
-        
-
-        # 3D model generated distribution
-        for compressor_index in range(100):
-            color = cmap(compressor_index % 10)
-            profiles, error = load_blade_curve(f'{model_generated_distribution_3D}/0.10_80000_2.70_0.82_design_{compressor_index+1}/Main_blade.curve')
-            profiles = [profiles[0], profiles[-1]]
-            for profile in profiles:
-                x = profile[:, 0]
-                y = profile[:, 1]
-                z = profile[:, 2]
-
-                ax.scatter(x,(y**2+z**2)**0.5, s=1, color = color)
-                ax.axis('equal')
-                ax.set_ylim(5,50)
-                ax.set_title('3D model generated distribution')
-        
-
-        # 1D model generated distribution
-        for compressor_index in range(100):
-            color = cmap(compressor_index % 10)
-            
-            try: 
-                profiles, error = load_blade_curve(f'{model_generated_distribution_1D}/compressor_{compressor_index+1}.curve')
-                profiles = [profiles[0], profiles[-1]]
-                for profile in profiles:
-                    x = profile[:, 0]
-                    y = profile[:, 1]
-                    z = profile[:, 2]
-
-                    ax_2.scatter(x,(y**2+z**2)**0.5, s=1, color = color)
-                    ax_2.axis('equal')
-                    ax_2.set_ylim(5,50)
-                    ax_2.set_title('1D model generated distribution')
-            except FileNotFoundError:
-                pass
-
-
-
-        # Training data distribution
-        # df = pd.read_csv('dataset/1D_compressor_geometry.csv')
-        
-        # target_efficiency = 0.817319913047312
-        # target_pressure_ratio =  2.698938227209207
-
-        # compressor_index_list =[]
-
-        # for _, row in df.iterrows():
-        #     if row['m_dot'] == 0.10:
-        #         if row['omega'] == 8377.580409572782:
-        #             if 100*(abs((row['efficiency'] - target_efficiency)/target_efficiency)) < 1:
-        #                 if 100*(abs((row['pressure_ratio'] - target_pressure_ratio)/target_pressure_ratio)) < 1:
-        #                     compressor_index_list.append(row['geometry_index'])
-                            
-
-
-        # print(f'There are {len(compressor_index_list)} that can satisfy the condition in the training set.')
-        # for compressor_index in compressor_index_list:
-        #     try: 
-        #         profiles, _ = load_blade_curve(f'dataset/3D_compressor/compressor_{compressor_index}.curve')
-        #         color = cmap(compressor_index % 10)
-        #         profiles = [profiles[0], profiles[-1]]
-        #         for profile in profiles:
-        #             x = profile[:, 0]
-        #             y = profile[:, 1]
-        #             z = profile[:, 2]
-
-        #             ax_4.scatter(x,(y**2 + z**2)**0.5, s=1, color = color)
-        #             ax_4.axis('equal')
-        #             ax_4.set_ylim(5,50)
-        #             ax_4.set_title('Training data distribution')
-        #     except FileNotFoundError:
-        #         pass
-        
-
-        # Physical distribution
-        for compressor_index, file in enumerate(physical_distribution_files):
-            color = cmap(compressor_index % 10)
-            profiles, error = load_blade_curve(f'dataset/physical_distribution/{file}')
-            profiles = [profiles[0], profiles[-1]]
-            for profile in profiles:
-                x = profile[:, 0]
-                y = profile[:, 1]
-                z = profile[:, 2]
-
-                ax_3.scatter(x,(y**2+z**2)**0.5, s=1, color = color)
-                ax_3.axis('equal')
-                ax_3.set_ylim(5,50)
-                ax_3.set_title('Physical distribution')
-    
-    elif mode == 'heatmap':
-        
-        def plot_kde(ax, X, R):
-
             values = np.vstack([X, R])
             kde = gaussian_kde(values)
-
+    
             xmin, xmax = min(X), max(X)
             rmin, rmax = min(R), max(R)
             print('X min', xmin, 'X max', xmax)
             print('R min', rmin, 'R max', rmax)
-
+    
             xmin = -10
             xmax = 50
             rmin = 5
             rmax = 50
             xi, ri = np.mgrid[xmin:xmax:200j, rmin:rmax:200j]
             zi = kde(np.vstack([xi.ravel(), ri.ravel()])).reshape(xi.shape)
-
+    
             # ax.contourf(xi, ri, zi, levels=100, cmap = 'Reds')
             ax.pcolormesh(xi, ri, zi, cmap='Reds', shading='gouraud')
             ax.axis('equal')
@@ -3936,23 +3821,14 @@ def compare_3D_distribution(mode):
             ax.tick_params(axis='both', which='major', labelsize=14)
 
 
+    if plot == '1D_model': 
 
-        # Model generated
-        # X1, R1 = [], []
-        # for compressor_index in range(100):
-        #     profiles, _ = load_blade_curve(f'{model_generated_distribution_3D}/0.09_80000_2.70_0.82_design_{compressor_index+1}/Main_blade.curve')
-        #     profiles = [profiles[0], profiles[-1]]
-        #     for profile in profiles:
-        #         x = profile[:, 0]
-        #         r = np.sqrt(profile[:,1]**2 + profile[:,2]**2)
-        #         X1.append(x); R1.append(r)
-
-        # plot_kde(ax, np.concatenate(X1), np.concatenate(R1))
-        # ax.set_title('3D Model Generated Distribution')
-
-
-        # 1D Model generated
+        fig_2, ax_2 = plt.subplots()
         X2, R2 = [], []
+        model_generated_distribution_1D_files = sorted(os.listdir(model_generated_distribution_1D))
+        model_generated_distribution_1D_files = model_generated_distribution_1D_files[:100]
+        model_generated_distribution_1D = "generated_compressor_3D_geometry/1D_model_generated_16_profiles_reversed"
+
         for compressor_index in range(100):
             try: 
                 profiles, _ = load_blade_curve(f'{model_generated_distribution_1D}/compressor_{compressor_index+1}.curve')
@@ -3964,58 +3840,52 @@ def compare_3D_distribution(mode):
             except FileNotFoundError:
                 pass
         plot_kde(ax_2, np.concatenate(X2), np.concatenate(R2))
-        # ax_2.set_title('1D Model Generated Distribution')
+
+        save_fig_custom(fig, file_path='fig', file_name=f'3D_model_generated_distribution', overwrite=True, dpi = 500)
 
 
+    elif plot == '3D_model':
 
-        # Training data
-        # df = pd.read_csv('dataset/1D_compressor_geometry.csv')
-        
-        # target_efficiency = 0.817319913047312
-        # target_pressure_ratio =  2.698938227209207
+        fig, ax = plt.subplots()
+        model_generated_distribution_3D = "generated_compressor_3D_geometry/3D_model_generated"
+        model_generated_distribution_3D_files = sorted(os.listdir(model_generated_distribution_3D))
+        X1, R1 = [], []
 
-        # compressor_index_list =[]
+        for compressor_index in range(100):
+            profiles, _ = load_blade_curve(f'{model_generated_distribution_3D}/0.09_80000_2.70_0.82_design_{compressor_index+1}/Main_blade.curve')
+            profiles = [profiles[0], profiles[-1]]
+            for profile in profiles:
+                x = profile[:, 0]
+                r = np.sqrt(profile[:,1]**2 + profile[:,2]**2)
+                X1.append(x); R1.append(r)
+        plot_kde(ax, np.concatenate(X1), np.concatenate(R1))
 
-        # for _, row in df.iterrows():
-        #     if row['m_dot'] == 0.1:
-        #         if row['omega'] == 8377.580409572782:
-        #             if 100*(abs((row['efficiency'] - target_efficiency)/target_efficiency)) < 1:
-        #                 if 100*(abs((row['pressure_ratio'] - target_pressure_ratio)/target_pressure_ratio)) < 1:
-        #                     compressor_index_list.append(row['geometry_index'])
-                            
+        save_fig_custom(fig, file_path='fig', file_name=f'3D_model_generated_distribution', overwrite=True, dpi = 500)
 
-        # X4, R4 = [], []
-        # for compressor_index in compressor_index_list:
-        #     try:
-        #         profiles, _ = load_blade_curve(f'dataset/3D_compressor/compressor_{compressor_index}.curve')
-        #         profiles = [profiles[0], profiles[-1]]
-        #         for profile in profiles:
-        #             x = profile[:, 0]
-        #             r = np.sqrt(profile[:,1]**2 + profile[:,2]**2)
-        #             X4.append(x); R4.append(r)
-        #     except FileNotFoundError:
-        #         pass
-        # plot_kde(ax_4, np.concatenate(X4), np.concatenate(R4))
-        # ax_4.set_title('Training Data Distribution')
 
-        # Physical
-        # X3, R3 = [], []
-        # for file in physical_distribution_files:
-        #     profiles, _ = load_blade_curve(f'generated_compressor_3D_geometry/physical_sampled_geometry/{file}')
-        #     profiles = [profiles[0], profiles[-1]]
-        #     for profile in profiles:
-        #         x = profile[:, 0]
-        #         r = np.sqrt(profile[:,1]**2 + profile[:,2]**2)
-        #         X3.append(x); R3.append(r)
+    elif plot == 'physical_distribution':
 
-        # plot_kde(ax_3, np.concatenate(X3), np.concatenate(R3))
-        # ax_3.set_title('Physical Distribution')
+        fig_3, ax_3 = plt.subplots()
+
+        physical_distribution = "generated_compressor_3D_geometry/physical_sampled_geometry"
+        physical_distribution_files = sorted(os.listdir(physical_distribution))
+        # physical_distribution_files = physical_distribution_files[:100]
+        physical_distribution_files = physical_distribution_files[-100:]
+
     
-    # save_fig_custom(fig, file_path='fig', file_name=f'3D_model_generated_distribution', overwrite=True, dpi = 500)
-    save_fig_custom(fig_2, file_path='fig', file_name=f'1D_model_generated_distribution', overwrite=True, dpi = 500)
-    # save_fig_custom(fig_3, file_path='fig', file_name=f'meanline_model_generated_distribution_1', overwrite=True, dpi = 500)
-    # save_fig_custom(fig_4, file_path='fig', file_name=f'training_data_distribution', overwrite=True, dpi = 500)
+        X3, R3 = [], []
+        for file in physical_distribution_files:
+            profiles, _ = load_blade_curve(f'generated_compressor_3D_geometry/physical_sampled_geometry/{file}')
+            profiles = [profiles[0], profiles[-1]]
+            for profile in profiles:
+                x = profile[:, 0]
+                r = np.sqrt(profile[:,1]**2 + profile[:,2]**2)
+                X3.append(x); R3.append(r)
 
+        plot_kde(ax_3, np.concatenate(X3), np.concatenate(R3))
+
+        save_fig_custom(fig_3, file_path='fig', file_name=f'meanline_model_generated_distribution_2', overwrite=True, dpi = 500)
+    
 
 
 

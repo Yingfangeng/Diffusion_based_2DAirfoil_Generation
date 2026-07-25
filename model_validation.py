@@ -1064,7 +1064,8 @@ def validation_3D(device, sample_percent, model, aux_model, num_steps, manual_se
         
         
         
-        except:
+        except Exception as e:
+            print(e)
             pass
 
 
