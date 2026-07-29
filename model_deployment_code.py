@@ -1691,7 +1691,7 @@ def off_design_plot_1D(multi_design_geometry, m_dot_design_point, omega, pr_desi
         ax2.set_ylim(0.7, 0.9)
         ax2.tick_params(axis='both', which='major', labelsize=14)
         ax2.grid(True, ls = ':')
-        ax2.legend(fontsize = 14)
+        # ax2.legend(fontsize = 14)
 
     save_fig_custom(fig, file_path='fig', file_name=f'off_design_pr_plot', overwrite=True, dpi = 500)
     save_fig_custom(fig2, file_path='fig', file_name=f'off_design_eta_plot', overwrite=True, dpi = 500)
@@ -2772,7 +2772,7 @@ def validation_3D(mode, device, sample_number, model, aux_model, num_steps, manu
 
                 number_of_trials += 1
 
-                if pr_error < pr_tolerance and eta_error < eta_tolerance and rake_angle > 0 and rake_angle < 45:# and geometry_1D['L_z'] >= 0.027 and geometry_1D['L_z'] <= 0.029 and number_of_blades == 8:
+                if pr_error < pr_tolerance and eta_error < eta_tolerance and rake_angle > 0 and rake_angle < 45:# and geometry_1D['L_z'] >= 0.027 and geometry_1D['L_z'] <= 0.03 and number_of_blades == 8:
                     print(f'Number {design+1} design took {number_of_trials} trials.')
                     print(f'Pressure ratio {pr} has relative error {pr_error}% compared to {pr_original}.')
                     print(f'Efficiency {eta} has relative error {eta_error}% compared to {eta_original}. ')
@@ -3852,7 +3852,7 @@ def compare_3D_distribution(plot):
         X1, R1 = [], []
 
         for compressor_index in range(100):
-            profiles, _ = load_blade_curve(f'{model_generated_distribution_3D}/0.09_80000_2.70_0.82_design_{compressor_index+1}/Main_blade.curve')
+            profiles, _ = load_blade_curve(f'{model_generated_distribution_3D}/0.09_80000_2.70_0.85_design_{compressor_index+1}/Main_blade.curve')
             profiles = [profiles[0], profiles[-1]]
             for profile in profiles:
                 x = profile[:, 0]
