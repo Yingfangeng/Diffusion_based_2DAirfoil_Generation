@@ -8,7 +8,6 @@ import random
 import yaml
 from models.diffusion_model import EDM_CFG, edm_sampler, StackedRandomGenerator
 import argparse
-import re
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import signal
