@@ -1651,6 +1651,8 @@ def validation_1D(mode, device, sample_number, model, num_steps, manual_seed, mu
                 rnd = StackedRandomGenerator(device, range(sample_number))
                 latents = rnd.randn([sample_number, model.in_dim], device=device)
 
+                # latents = torch.randn([sample_number, model.in_dim], device=device)
+
                 with torch.no_grad():
                     samples, _ = edm_sampler(model, latents=latents, class_labels=cond, randn_like=torch.randn_like, num_steps=num_steps, deterministic=False) 
 

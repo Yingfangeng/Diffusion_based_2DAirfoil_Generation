@@ -8,14 +8,14 @@ import pandas as pd
 from sklearn.decomposition import PCA
 import yaml
 import argparse
-import matplotlib.pyplot as plt
-import time
+
 
 from .Conv_1D import *
 from .MLP import *
 from .Conv_1D_UNet import *
 from .Conv_1D_ResNet_UNet import *
 from .Conv_2D_ResNet_UNet import *
+
 
 
 class EDM_CFG(torch.nn.Module):
@@ -68,34 +68,181 @@ class EDM_CFG(torch.nn.Module):
             self.model = Conv2DResNetUNetCFG(self.in_dim, self.out_dim, self.label_dim, model_channel=model_channel, channel_multiply=channel_multiply, dim_mult_emb=dim_mult_emb, num_blocks=num_blocks,
                                        dropout=dropout, emb_type=emb_type, dim_mult_time=dim_mult_time, **model_kwargs)
 
-    def forward(self, x, sigma, class_labels=None, force_fp32=False,  **model_kwargs):
 
-        x = x.to(torch.float32)  # the input noisy signal
+    def forward(self, x, sigma, class_labels=None, force_fp32=False, **model_kwargs):
+        """EDM denoiser: Equation (7) and the EDM column of Table 1.
 
-        # print(x.shape, 'hihihi')
-        # sigma = sigma.to(torch.float32).reshape(-1, 1) # the noisy intensity !!!!!
+        Sigma may be scalar or contain one noise level per batch item.
+        The raw network remains responsible for processing class conditions.
+        """
+        signal = x.to(dtype=torch.float32)
+        
+        noise_level = torch.as_tensor(sigma, device=x.device, dtype=torch.float32)
+        
+        noise_level = noise_level.reshape(-1)
+        
+        if noise_level.numel() == 1:
+            noise_level = noise_level.expand(signal.shape[0])
+        
+        elif noise_level.numel() != signal.shape[0]:
+            raise ValueError("sigma must be scalar or have one value per batch item")
+        
+        noise_level = noise_level.reshape(-1, *([1] * (signal.ndim - 1)))
 
-        sigma = sigma.to(torch.float32)
-        class_labels = None if (self.label_dim == 0 or class_labels is None) else class_labels.to(torch.float32).reshape(-1, self.label_dim)
-        dtype = torch.float16 if (self.use_fp16 and not force_fp32 and x.device.type == 'cuda') else torch.float32
+        labels = None
+        
+        if self.label_dim and class_labels is not None:
+            labels = class_labels.to(device=x.device, dtype=torch.float32)
+            labels = labels.reshape(-1, self.label_dim)
 
-        c_skip = self.sigma_data ** 2 / (sigma ** 2 + self.sigma_data ** 2)
-        c_out = sigma * self.sigma_data / (sigma ** 2 + self.sigma_data ** 2).sqrt()
-        c_in = 1 / (self.sigma_data ** 2 + sigma ** 2).sqrt()
-        c_noise = sigma.log() / 4
+        data_variance = self.sigma_data ** 2
+        total_variance = noise_level.square() + data_variance
+        input_scale = total_variance.rsqrt()
+        skip_scale = data_variance / total_variance
+        output_scale = noise_level * self.sigma_data * input_scale
+        noise_embedding = noise_level.flatten().log() * 0.25
 
-        x_in = c_in * x
-        F_x = self.model((x_in).to(dtype), class_labels, c_noise.flatten(), **model_kwargs)
-
-        assert F_x.dtype == dtype
-
-        # print('exe', x.shape, F_x.shape) 
-        D_x = c_skip * x + c_out * F_x.to(torch.float32)
-        return D_x
+        network_dtype = torch.float32
+        
+        if self.use_fp16 and not force_fp32 and signal.is_cuda:
+            network_dtype = torch.float16
+        prediction = self.model(
+            (signal * input_scale).to(network_dtype),
+            labels,
+            noise_embedding,
+            **model_kwargs,
+        )
+        assert prediction.dtype == network_dtype
+        return skip_scale * signal + output_scale * prediction.float()
 
     def round_sigma(self, sigma):
+        """Continuous EDM noise levels need no quantization."""
         return torch.as_tensor(sigma)
 
+
+
+def edm_sampler(
+    net,
+    latents,
+    class_labels=None,
+    randn_like=torch.randn_like,
+    num_steps=18,
+    sigma_min=0.002,
+    sigma_max=80,
+    rho=7,
+    S_churn=40,
+    S_min=0.05,
+    S_max=50,
+    S_noise=1.003,
+    deterministic=False,
+):
+    
+    if num_steps < 2:
+        raise ValueError("num_steps must be at least 2")
+    
+    lower = max(sigma_min, net.sigma_min)
+    upper = min(sigma_max, net.sigma_max)
+    
+    if not 0 < lower <= upper or rho <= 0:
+        raise ValueError("require 0 < sigma_min <= sigma_max and rho > 0")
+    
+    if S_churn < 0 or S_noise < 0 or S_min > S_max:
+        raise ValueError("invalid churn parameters")
+
+    # Equation (5): linear spacing in sigma**(1/rho), followed by sigma_N = 0.
+    fractions = torch.linspace(0.0, 1.0, num_steps, device=latents.device, dtype=torch.float64)
+    
+    levels = (upper ** (1.0 / rho) * (1.0 - fractions) + lower ** (1.0 / rho) * fractions).pow(rho)
+    
+    levels = net.round_sigma(levels).to(device=latents.device, dtype=torch.float64)
+    
+    levels = torch.cat((levels, levels.new_zeros(1)))
+
+    state = latents.to(dtype=torch.float64) * levels[0]
+    trajectory = torch.empty((num_steps, *latents.shape), dtype=torch.float64, device='cpu')
+    sigma_shape = (latents.shape[0],) + (1,) * (latents.ndim - 1)
+
+    def denoised_at(value, level):
+        batch_sigma = level.expand(sigma_shape)
+        
+        return net(value, batch_sigma, class_labels).to(dtype=torch.float64)
+
+    for index in range(num_steps):
+        current_level, following_level = levels[index], levels[index + 1]
+        inflated_level = current_level
+        start = state
+
+        # Algorithm 2, lines 4-6: perturb the state before evaluating the drift.
+        if not deterministic:
+            churn = 0.0
+            if S_min <= current_level <= S_max:
+                churn = min(S_churn / num_steps, 2.0 ** 0.5 - 1.0)
+            inflated_level = net.round_sigma(current_level * (1.0 + churn))
+            perturbation = randn_like(state) * S_noise
+            added_std = (inflated_level.square() - current_level.square()).sqrt()
+            start = state + added_std * perturbation
+
+        # With sigma(t)=t and s(t)=1, dx/dt = (x-D(x;t))/t.
+        slope = (start - denoised_at(start, inflated_level)) / inflated_level
+        step_size = following_level - inflated_level
+        proposal = start + step_size * slope
+
+        # Heun correction; the final step is Euler to avoid evaluating at zero.
+        if index + 1 < num_steps:
+            endpoint_slope = (
+                proposal - denoised_at(proposal, following_level)
+            ) / following_level
+            state = start + 0.5 * step_size * (slope + endpoint_slope)
+        else:
+            state = proposal
+        trajectory[index] = state.to(device='cpu')
+
+    return state, trajectory
+
+
+class EDMLoss:
+
+    def __init__(self, P_mean=-1.2, P_std=1.2, sigma_data=0.5):
+        self.P_mean = P_mean
+        self.P_std = P_std
+        self.sigma_data = sigma_data
+
+    def __call__(self, net, images, labels=None):
+        broadcast_shape = (images.shape[0],) + (1,) * (images.ndim - 1)
+        log_sigma = torch.randn(broadcast_shape, device=images.device)
+        log_sigma = self.P_mean + self.P_std * log_sigma
+        sigma = log_sigma.exp()
+
+        corrupted = images + sigma * torch.randn_like(images)
+        estimate = net(corrupted, sigma, labels)
+        # Table 1 weighting, with the original implementation's stabilizer
+        # retained to preserve its training objective at very small sigma.
+        weighting = (sigma.square() + self.sigma_data ** 2) / (
+            (sigma * self.sigma_data).square() + 1e-8
+        )
+        
+        return weighting * (estimate - images).square()
+
+
+class StackedRandomGenerator:
+    def __init__(self, device, seeds):
+        super().__init__()
+        self.generators = []
+        for _ in seeds:
+            g = torch.Generator(device)
+            g.seed()
+            self.generators.append(g)
+
+    def randn(self, size, **kwargs):
+        assert size[0] == len(self.generators) # assert is a checker that assess whether the two variable dimensinos are matched
+        return torch.stack([torch.randn(size[1:], generator=gen, **kwargs) for gen in self.generators])
+
+    def randn_like(self, input): # generate the random number in the same shape (dimension) as the input tensor
+        return self.randn(input.shape, dtype=input.dtype, layout=input.layout, device=input.device)
+
+    def randint(self, *args, size, **kwargs):
+        assert size[0] == len(self.generators)
+        return torch.stack([torch.randint(*args, size=size[1:], generator=gen, **kwargs) for gen in self.generators])
 
 
 class Aerofoil_Dataset(Dataset):
@@ -132,146 +279,6 @@ class Aerofoil_Dataset(Dataset):
             cond_data = self.cond_data[idx]
             return torch.tensor(coordinates, dtype=torch.float32), torch.tensor(cond_data, dtype=torch.float32)
 
-
-
-class EDMLoss:
-
-    def __init__(self, P_mean=-1.2, P_std=1.2, sigma_data=0.5):
-        self.P_mean = P_mean
-        self.P_std = P_std
-        self.sigma_data = sigma_data
-
-    def __call__(self, net, images, labels=None):
-
-        # rnd_normal = torch.randn([images.shape[0], 1], device=images.device) 
-        # sigma = (rnd_normal * self.P_std + self.P_mean).exp()
-        # weight = (sigma ** 2 + self.sigma_data ** 2) / (sigma * self.sigma_data) ** 2
-        # y = images
-        # n = torch.randn_like(y) * sigma
-        # D_yn = net(y + n, sigma, labels)
-        # loss = weight * ((D_yn - y) ** 2)
-
-        rnd = torch.randn([images.shape[0], 1], device=images.device)
-        sigma = (rnd * self.P_std + self.P_mean).exp()
-        sigma = sigma.view([images.shape[0]] + [1] * (images.ndim - 1))
-
-        weight = (sigma ** 2 + self.sigma_data ** 2) / ((sigma * self.sigma_data) ** 2 + 1e-8)
-
-        y = images
-        n = torch.randn_like(y) * sigma
-        D_yn = net(y + n, sigma, labels)
-        loss = weight * ((D_yn - y) ** 2)
-
-        return loss
-
-
-
-# This is the model deployment function, which start with a pure nosie and apply the edm model repeatedly until sigma = 0
-def edm_sampler(
-    net,   # net is the model
-    latents,# this is pure noise
-    class_labels=None, # the condition, re, ma, aoa, cl, cd
-    randn_like=torch.randn_like,
-    num_steps = 18, # number of denoising steps used, a hyper parameter
-    sigma_min = 0.002, # smallest noise level
-    sigma_max = 80, # largest noise level
-    rho = 7, # a value to control how hoise levels are spaced
-    S_churn = 40, 
-    S_min = 0.05, 
-    S_max = 50, 
-    S_noise = 1.003,
-    deterministic=False
-):  # rho is a hyperparam that can be used to tune the amount of noise added per step
-
-    # Adjust noise levels based on what's supported by the network.
-    # Clip to the range that the network is trained on such that it can be used to predict the noise level
-    sigma_min = max(sigma_min, net.sigma_min)
-    sigma_max = min(sigma_max, net.sigma_max)
-
-    # Time step discretization. T_steps calculates the noisy levels that is going to be added to each step. It takes the value of a non-uniform noise distribution. 
-    step_indices = torch.arange(num_steps, dtype=torch.float64, device=latents.device)
-
-    # The schedule of the noise intensity along the timeline. Non-uniformity controlled by the hyperparameter rho.
-    t_steps = (sigma_max ** (1 / rho) + step_indices / (num_steps - 1) * (
-                sigma_min ** (1 / rho) - sigma_max ** (1 / rho))) ** rho
-    t_steps = torch.cat([net.round_sigma(t_steps), torch.zeros_like(t_steps[:1])])  # Ensure the final step is always t_N = 0
-
-    # The first step
-    x_next = latents.to(torch.float64) * t_steps[0]
-
-    whole_trajectory = torch.zeros((num_steps, *x_next.shape), dtype=torch.float64)
-    # Main sampling loop.
-    for i, (t_cur, t_next) in enumerate(zip(t_steps[:-1], t_steps[1:])):  # 0, ..., N-1
-
-        x_cur = x_next
-        if not deterministic:
-            # Increase noise temporarily.
-            gamma = min(S_churn / num_steps, np.sqrt(2) - 1) if S_min <= t_cur <= S_max else 0
-            t_hat = net.round_sigma(t_cur + gamma * t_cur)
-            x_hat = x_cur + (t_hat ** 2 - t_cur ** 2).sqrt() * S_noise * randn_like(x_cur)
- 
-        else:
-            t_hat = t_cur # the noise we added at this particular step
-            x_hat = x_cur # the noisy signal that is to be denoised
-        
-        
-        # Euler step.
-        # B = x_hat.shape[0]
-        # x_hat = x_hat.view(B, 1, 256, 256)
-        # denoised = net(x_hat, repeat(t_hat.reshape(-1), 'w -> h w', h=x_hat.shape[0]), class_labels).to(torch.float64)
-        # denoised = denoised.view(B, -1)
-
-        # d_cur = (x_hat - denoised) / t_hat
-        # x_next = x_hat + (t_next - t_hat) * d_cur
-
-        # # Apply 2nd order correction.
-        # if i < num_steps - 1:
-        #     denoised = net(x_next, repeat(t_next.reshape(-1), 'w -> h w', h=x_next.shape[0]), class_labels).to(torch.float64)
-        #     d_prime = (x_next - denoised) / t_next
-        #     x_next = x_hat + (t_next - t_hat) * (0.5 * d_cur + 0.5 * d_prime)
-
-        # ========new============
-        # Euler step.
-        B = x_hat.shape[0]
-        sigma_hat = t_hat.expand(B, 1)
-        denoised = net(x_hat, sigma_hat, class_labels).to(torch.float64)
-        d_cur = (x_hat - denoised) / t_hat
-        x_next = x_hat + (t_next - t_hat) * d_cur
-
-        # Apply 2nd order correction.
-        if i < num_steps - 1:
-            sigma_next = t_next.expand(B, 1)
-            denoised = net(x_next, sigma_next, class_labels).to(torch.float64)
-            d_prime = (x_next - denoised) / t_next
-            x_next = x_hat + (t_next - t_hat) * (0.5 * d_cur + 0.5 * d_prime)
-
-        whole_trajectory[i] = x_next # record the entire denoisy steps
-
-    return x_next, whole_trajectory
-
-
-
-
-class StackedRandomGenerator:
-    def __init__(self, device, seeds):
-        super().__init__()
-        self.generators = []
-        for _ in seeds:
-            g = torch.Generator(device)
-            g.seed()
-            # g.manual_seed(1)
-            self.generators.append(g)
-
-    def randn(self, size, **kwargs):
-        assert size[0] == len(self.generators) # assert is a checker that assess whether the two variable dimensinos are matched
-        return torch.stack([torch.randn(size[1:], generator=gen, **kwargs) for gen in self.generators])
-
-    def randn_like(self, input): # generate the random number in the same shape (dimension) as the input tensor
-        return self.randn(input.shape, dtype=input.dtype, layout=input.layout, device=input.device)
-
-    def randint(self, *args, size, **kwargs):
-        assert size[0] == len(self.generators)
-        return torch.stack([torch.randint(*args, size=size[1:], generator=gen, **kwargs) for gen in self.generators])
 
 
 
@@ -388,7 +395,7 @@ if __name__ == '__main__':
     nn_structure=model_config['neural_network_sturcture']
     reduced_data_fraction=model_config['reduced_data_fraction']
     # condition = model_config['condition']
-    model_code = f"./mdl_weight/{data_structure}_{nn_structure}_{model_channel}_{model_layer}_{len(model_channel_multiplication)}_with_{num_epochs}_epochs_{reduced_data_fraction}_data_new"
+    model_code = f"./mdl_weight/{data_structure}_{nn_structure}_{model_channel}_{model_layer}_{len(model_channel_multiplication)}_with_{num_epochs}_epochs_{reduced_data_fraction}_data_resturctured_model_script"
     save_path = f"{model_code}.pth"
     check_point_path = f"{model_code}_check_point.pth"
     print(f'The model weight will be saved to path {save_path}')
